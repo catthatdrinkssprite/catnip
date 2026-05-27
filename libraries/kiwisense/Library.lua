@@ -276,7 +276,7 @@ local Options, MiscOptions do
         for name, suffix in FontNames do 
             local RegisteredFont = RegisterFont(name, 400, "Normal", {
                 Id = suffix,
-                Font = game:HttpGet("https://github.com/catthatdrinkssprite/mooshine/raw/refs/heads/main/libraries/kiwisense/fonts" .. suffix),
+                Font = game:HttpGet("https://github.com/catthatdrinkssprite/moonshine/raw/refs/heads/main/libraries/kiwisense/fonts" .. suffix),
             }) 
 
             Fonts[name] = Font.new(RegisteredFont, Enum.FontWeight.Regular, Enum.FontStyle.Normal)
