@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>catnip</title>
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="🌿 catnip">
+    <meta property="og:description" content="a free and fully opensource script hub">
+    <meta property="og:url" content="https://catthatdrinkssprite.github.io/catnip/">
+    <meta name="theme-color" content="#82a68f">
+    <style>
+        :root {
+            --primary: rgb(130, 174, 143);
+            --primary-glow: rgba(130, 174, 143, 0.3);
+            --bg-dark: #0d1117;
+            --card-bg: rgba(22, 27, 34, 0.7);
+            --text-main: #c9d1d9;
+            --text-muted: #8b949e;
+            --border-color: rgba(130, 174, 143, 0.2);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        /* dynamic particles background */
+        #bg-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            position: relative;
+        }
+
+        /* header section */
+        header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            color: var(--primary);
+            text-shadow: 0 0 20px var(--primary-glow);
+            margin-bottom: 10px;
+            font-weight: 700;
+            letter-spacing: -1px;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            margin-bottom: 25px;
+        }
+
+        /* links & loadstring buttons */
+        .links-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 10px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            backdrop-filter: blur(5px);
+        }
+
+        .btn:hover {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px var(--primary-glow);
+            color: var(--primary);
+            transform: translateY(-2px);
+        }
+
+        .script-box {
+            background: rgba(130, 174, 143, 0.05);
+            border: 1px dashed var(--border-color);
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            max-width: 600px;
+            margin: 0 auto 50px auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+
+        .script-box:hover {
+            border-color: var(--primary);
+        }
+
+        .script-code {
+            overflow-x: auto;
+            white-space: nowrap;
+            color: var(--primary);
+            margin-right: 15px;
+        }
+
+        /* section layouts */
+        .section-title {
+            color: var(--primary);
+            font-size: 1.8rem;
+            margin-bottom: 25px;
+            text-shadow: 0 0 10px var(--primary-glow);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 50px;
+        }
+
+        /* tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 40px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            border-spacing: 0;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+
+        th, td {
+            text-align: left;
+            padding: 15px;
+            border-bottom: 1px solid rgba(130, 174, 143, 0.1);
+            font-size: 0.95rem;
+        }
+
+        th {
+            color: var(--primary);
+            font-weight: 600;
+            background: rgba(130, 174, 143, 0.05);
+        }
+
+        .clickable-game {
+            cursor: pointer;
+            color: var(--primary);
+            text-decoration: underline;
+            text-underline-offset: 4px;
+            font-weight: 600;
+            transition: text-shadow 0.2s;
+        }
+
+        .clickable-game:hover {
+            text-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        /* features section toggle behavior */
+        .features-display-container {
+            display: none;
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* interactive moving cards */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            transition: transform 0.2s cubic-bezier(0.25, 0.8, 0.25, 1), box-shadow 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+            transform-style: preserve-3d;
+            perspective: 1000px;
+        }
+
+        .card:hover {
+            box-shadow: 0 10px 25px rgba(130, 174, 143, 0.15), 0 0 15px var(--primary-glow);
+            border-color: rgba(130, 174, 143, 0.4);
+        }
+
+        .card h3 {
+            color: var(--primary);
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* feature listing styling */
+        .feature-list {
+            list-style: none;
+        }
+
+        .feature-list li {
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .feature-list li strong {
+            color: var(--primary);
+        }
+
+        .sub-list {
+            list-style: none;
+            padding-left: 15px;
+            margin-top: 5px;
+            color: var(--text-muted);
+            border-left: 1px solid var(--border-color);
+        }
+
+        .sub-list li {
+            margin-bottom: 4px;
+            font-size: 0.85rem;
+        }
+
+        /* footer design */
+        footer {
+            text-align: center;
+            margin-top: 80px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .credits-list {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="bg-canvas"></canvas>
+
+    <div class="container">
+        <header>
+            <h1>🌿 catnip</h1>
+            <p class="subtitle">a free and fully opensource script hub</p>
+            
+            <div class="links-container">
+                <a href="https://discord.gg/DPBtncwaEm" target="_blank" class="btn">💬 discord</a>
+            </div>
+
+            <div class="script-box" onclick="copyScript()">
+                <div class="script-code" id="script-text">loadstring(game:HttpGet("https://github.com/catthatdrinkssprite/catnip/raw/main/loader.lua", true))()</div>
+                <span style="color: var(--text-muted); font-size: 0.75rem;" id="copy-btn">click to copy</span>
+            </div>
+        </header>
+        
+        <h2 class="section-title">🎮 supported games</h2>
+        <p style="color: var(--text-muted); margin-top: -15px; margin-bottom: 20px; font-size: 0.9rem;">click on a game name to view its features.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>game name</th>
+                    <th>place id</th>
+                    <th>lines of code</th>
+                </tr>
+            </thead>
+            <!--
+            <tbody>
+                <tr>
+                    <td><span class="clickable-game" onclick="toggleFeatures('game-name-features')">game name</span></td>
+                    <td>place id</td>
+                    <td>lines of code</td>
+                </tr>
+            </tbody>
+            -->
+            <tbody>
+                <tr>
+                    <td><span class="clickable-game" onclick="toggleFeatures('prison-life-features')">prison life</span></td>
+                    <td>155615604</td>
+                    <td>~4000</td>
+                </tr>
+            </tbody>
+        </table>
+        <!--
+        <div id="game-name-features" class="features-display-container">
+            <h2 class="section-title">📦 game name features</h2>
+            <div class="grid">
+                <div class="card tilt-card">
+                    <h3>category</h3>
+                    <ul class="feature-list">
+                        <li><strong>feature</strong> — feature description</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        -->
+        <div id="prison-life-features" class="features-display-container">
+            <h2 class="section-title">🔫 prison life features</h2>
+            <div class="grid">
+                <div class="card tilt-card">
+                    <h3>combat</h3>
+                    <ul class="feature-list">
+                        <li><strong>no fire rate</strong> — removes fire rate delay on all guns</li>
+                        <li><strong>no spread</strong> — zeroes out bullet spread on all guns</li>
+                        <li><strong>force auto fire</strong> — forces all guns to fire automatically</li>
+                        <li style="color: var(--text-muted); font-style: italic;">event-driven: mods apply instantly on enable/equip, revert to original values on disable</li>
+                        <li style="margin-top: 15px;"><strong>silent aim</strong> — hooks raycast to redirect bullets to the closest target
+                            <ul class="sub-list">
+                                <li><strong>triggerbot</strong> — automatically fires when a valid target is within the fov circle (ranged weapons only)</li>
+                                <li>fov circle and tracer with configurable colors</li>
+                                <li>configurable radius, bone selection (head / humanoidrootpart)</li>
+                                <li>wall check (respects removed doors server-side), death check, forcefield check</li>
+                                <li>team and inmate type filters (guards, inmates, criminals / regular, aggressive, arrestable)</li>
+                                <li>friend check with player whitelist dropdown</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="card tilt-card">
+                    <h3>movement & visuals</h3>
+                    <ul class="feature-list">
+                        <li><strong>noclip</strong> — walk through walls and objects</li>
+                        <li><strong>infinite jump</strong> — jump mid-air without limits</li>
+                        <li style="margin-top: 15px;"><strong>esp filters</strong> — filter by team and inmate type, whitelist specific players (hide esp or show green)</li>
+                        <li><strong>name esp</strong> — floating names above players with team color, inmate status prefixes ([a] / [w]), forcefield prefix ([ff]), outline</li>
+                        <li><strong>box esp</strong> — 2d bounding boxes around players with team color, outline</li>
+                        <li style="color: var(--text-muted); font-style: italic;">both esp types instantly hide on player death</li>
+                    </ul>
+                </div>
+
+                <div class="card tilt-card">
+                    <h3>sounds & world</h3>
+                    <ul class="feature-list">
+                        <li><strong>hit sounds</strong> — plays a custom sound when you deal damage to another player
+                            <ul class="sub-list">
+                                <li>sound selection: rust, minecraft orb</li>
+                                <li>configurable volume (0-3)</li>
+                                <li>mute gun sound toggle — silences the default gun shoot sound</li>
+                                <li>preview button to audition sounds without shooting</li>
+                            </ul>
+                        </li>
+                        <li><strong>kill sounds</strong> — plays a custom sound when you kill another player
+                            <ul class="sub-list">
+                                <li>independent sound selection and volume from hit sounds</li>
+                                <li>preview button</li>
+                            </ul>
+                        </li>
+                        <li style="margin-top: 15px;"><strong>remove doors</strong> — removes all doors from the map (reversible)</li>
+                    </ul>
+                </div>
+
+                <div class="card tilt-card">
+                    <h3>misc features</h3>
+                    <ul class="feature-list">
+                        <li><strong>ping warning</strong> — toggleable notification when ping exceeds 300ms (30s cooldown)</li>
+                        <li><strong>remove jump cooldown</strong> — disables the anti-jump cooldown script</li>
+                        <li><strong>always backpack</strong> — keeps the backpack enabled even when crouching or tased</li>
+                        <li><strong>anti invisible</strong> — detects and stops the invisibility animation, highlights invisible players in red</li>
+                        <li><strong>anti tase</strong> — counteracts taser effects by stopping stun animations and restoring movement
+                            <ul class="sub-list">
+                                <li>preserves sprint speed — restores your actual speed before being tased instead of defaulting to walk</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="card tilt-card">
+                    <h3>auras & blatant</h3>
+                    <ul class="feature-list">
+                        <li><strong>arrest aura</strong> — automatically arrests nearby criminals, aggressive and arrestable inmates
+                            <ul class="sub-list">
+                                <li>configurable radius (5-30 studs)</li>
+                                <li>3d radius circle rendered at feet level</li>
+                                <li>3d target line from your feet to the current target</li>
+                                <li>friend check and player whitelist</li>
+                            </ul>
+                        </li>
+                        <li><strong>fist aura</strong> — automatically punches nearby players
+                            <ul class="sub-list">
+                                <li>configurable radius (5-30 studs)</li>
+                                <li>team and inmate type filters (guards, inmates, criminals / regular, aggressive, arrestable)</li>
+                                <li>3d radius circle rendered at feet level</li>
+                                <li>3d target line from your feet to the current target</li>
+                                <li>friend check and player whitelist</li>
+                            </ul>
+                        </li>
+                        <li><strong>ragebot</strong> — fully automated combat — acquires targets, aims, and fires with no input needed
+                            <ul class="sub-list">
+                                <li>automatically switch weapons if current one is empty</li>
+                                <li>automatically reload weapons if the current ones magazine is empty</li>
+                                <li>wall check (respects removed doors server-side), death check, forcefield check</li>
+                                <li>team and inmate type filters (guards, inmates, criminals / regular, aggressive, arrestable)</li>
+                                <li>friend check with player whitelist dropdown</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="card tilt-card">
+                    <h3>utility</h3>
+                    <ul class="feature-list">
+                        <li><strong>anti riot shield</strong> — removes riot shield parts from all players' characters</li>
+                        <li><strong>teleportation</strong> — teleports to any selected player</li>
+                        <li><strong>live stats</strong> — watermark displays real-time fps and ping</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="section-title">⚙️ configuration & system</h2>
+        <div class="grid">
+            <div class="card tilt-card">
+                <h3>architecture</h3>
+                <ul class="feature-list">
+                    <li><strong>centralized render loop</strong> — single RenderStepped connection with a cached callback system instead of individual connections per feature</li>
+                    <li><strong>table-driven loader</strong> — assets and folders declared as tables, downloaded with error handling and failure notifications</li>
+                    <li><strong>quartz compatibility layer</strong> — automatically tests and polyfills missing executor functions at startup, ensuring cross-executor support</li>
+                    <li><strong>executor capability validation</strong> — checks for critical functions after quartz patching, notifies and bails cleanly if the executor is incompatible</li>
+                </ul>
+            </div>
+
+            <div class="card tilt-card">
+                <h3>💻 recommended executors</h3>
+                <table style="margin-bottom: 0; border: none; background: transparent; backdrop-filter: none;">
+                    <thead>
+                        <tr>
+                            <th style="padding: 8px;">executor</th>
+                            <th style="padding: 8px;">sunc</th>
+                            <th style="padding: 8px;">price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="padding: 8px;">volt</td>
+                            <td style="padding: 8px;">98%</td>
+                            <td style="padding: 8px;">6$/wk</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px;">seliware</td>
+                            <td style="padding: 8px;">100%</td>
+                            <td style="padding: 8px;">10$/mo</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px;">potASSium</td>
+                            <td style="padding: 8px;">100%</td>
+                            <td style="padding: 8px;">20$/lf</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px;">madium</td>
+                            <td style="padding: 8px;">null</td>
+                            <td style="padding: 8px;">free</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <footer>
+            <p>this project is licensed under the gnu general public license v3.0 or later.</p>
+            <div class="credits-list">
+                <span>catthatdrinkssprite - script founder & lead dev</span>
+                <span>azula.cs - contributor</span>
+                <span>samet - ui library</span>
+                <span>upio - polyfill framework</span>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // function to toggle the layout visibility upon clicking game name
+        function toggleFeatures(id) {
+            const container = document.getElementById(id);
+            if (container.style.display === "block") {
+                container.style.display = "none";
+            } else {
+                container.style.display = "block";
+                container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        // interactive moving hover cards calculation
+        const cards = document.querySelectorAll('.tilt-card');
+        cards.forEach(card => {
+            card.addEventListener('mousemove', (e) => {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                
+                // maximum movement calculation angles
+                const rotateX = ((centerY - y) / centerY) * 10; 
+                const rotateY = ((x - centerX) / centerX) * 10;
+                
+                card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-5px)`;
+            });
+            
+            card.addEventListener('mouseleave', () => {
+                card.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0px)';
+            });
+        });
+
+        // interactive dynamic dot background connecting to mouse
+        const canvas = document.getElementById('bg-canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        });
+
+        const mouse = { x: null, y: null, radius: 180 };
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+        window.addEventListener('mouseout', () => {
+            mouse.x = null;
+            mouse.y = null;
+        });
+
+        class Particle {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.vx = (Math.random() - 0.5) * 0.8;
+                this.vy = (Math.random() - 0.5) * 0.8;
+                this.radius = Math.random() * 2 + 1;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if (this.x < 0 || this.x > width) this.vx *= -1;
+                if (this.y < 0 || this.y > height) this.vy *= -1;
+
+                // pull particles or react to mouse proximity
+                if (mouse.x != null && mouse.y != null) {
+                    let dx = mouse.x - this.x;
+                    let dy = mouse.y - this.y;
+                    let dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < mouse.radius) {
+                        let force = (mouse.radius - dist) / mouse.radius;
+                        this.x += (dx / dist) * force * 1.5;
+                        this.y += (dy / dist) * force * 1.5;
+                    }
+                }
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(130, 174, 143, 0.4)';
+                ctx.fill();
+            }
+        }
+
+        const particles = Array.from({ length: 75 }, () => new Particle());
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+
+            // connect closest dots to mouse coordinates
+            if (mouse.x !== null && mouse.y !== null) {
+                particles.forEach(p => {
+                    let dx = mouse.x - p.x;
+                    let dy = mouse.y - p.y;
+                    let dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < mouse.radius) {
+                        let alpha = (1 - (dist / mouse.radius)) * 0.4;
+                        ctx.beginPath();
+                        ctx.moveTo(p.x, p.y);
+                        ctx.lineTo(mouse.x, mouse.y);
+                        ctx.strokeStyle = `rgba(130, 174, 143, ${alpha})`;
+                        ctx.lineWidth = 0.8;
+                        ctx.stroke();
+                    }
+                });
+            }
+
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        // function loader script click-to-copy handler
+        function copyScript() {
+            const scriptText = document.getElementById('script-text').innerText;
+            navigator.clipboard.writeText(scriptText).then(() => {
+                const btn = document.getElementById('copy-btn');
+                btn.innerText = 'copied!';
+                btn.style.color = 'rgb(130, 174, 143)';
+                setTimeout(() => {
+                    btn.innerText = 'click to copy';
+                    btn.style.color = '#8b949e';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>

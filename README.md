@@ -4,7 +4,7 @@
 
 # 🌿 catnip
 
-a fully opensource script hub
+a free and fully opensource script hub
 
 ## [💬 discord](https://discord.gg/DPBtncwaEm)
 
