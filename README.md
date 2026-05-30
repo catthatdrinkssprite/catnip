@@ -2,7 +2,7 @@
 
 ---
 
-# 🌙 catnip
+# 🌿 catnip
 
 a fully opensource script for prison life
 
