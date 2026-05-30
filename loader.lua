@@ -8,39 +8,38 @@ if QuartzOk and Quartz then
     Tester:PatchEnvironment()
 end
 
-local BASE_URL = "https://github.com/catthatdrinkssprite/moonshine/raw/main"
+local BASE_URL = "https://github.com/catthatdrinkssprite/catnip/raw/main"
 
 local Folders = {
-    "moonshine",
-    "moonshine/images",
-    "moonshine/txts",
-    "moonshine/sounds",
+    "catnip",
+    "catnip/images",
+    "catnip/txts",
+    "catnip/sounds",
 }
 
 local Assets = {
-    ["moonshine/images/cover.png"]           = "moonshine/images/embedcover.png",
-    ["moonshine/images/embedcover.png"]      = "moonshine/images/embedcover.png",
-    ["moonshine/images/moon.png"]           = "moonshine/images/moon.png",
-    ["moonshine/images/paw.png"]           = "moonshine/images/paw.png",
-    ["moonshine/images/W AZULA.png"]        = "moonshine/images/W%20AZULA.png",
-    ["moonshine/txts/W AZULA.txt"]          = "moonshine/txts/W%20AZULA.txt",
-    ["moonshine/sounds/12.mp3"]             = "moonshine/sounds/12.mp3",
-    ["moonshine/sounds/agpa2.mp3"]          = "moonshine/sounds/agpa2.mp3",
-    ["moonshine/sounds/basshit.mp3"]        = "moonshine/sounds/basshit.mp3",
-    ["moonshine/sounds/bell.mp3"]           = "moonshine/sounds/bell.mp3",
-    ["moonshine/sounds/blizzard.mp3"]       = "moonshine/sounds/blizzard.mp3",
-    ["moonshine/sounds/bubble.mp3"]         = "moonshine/sounds/bubble.mp3",
-    ["moonshine/sounds/chockpro.mp3"]       = "moonshine/sounds/chockpro.mp3",
-    ["moonshine/sounds/cod.mp3"]            = "moonshine/sounds/cod.mp3",
-    ["moonshine/sounds/copperbell.mp3"]     = "moonshine/sounds/copperbell.mp3",
-    ["moonshine/sounds/crowbar.mp3"]        = "moonshine/sounds/crowbar.mp3",
-    ["moonshine/sounds/headshot.mp3"]        = "moonshine/sounds/headshot.mp3",
-    ["moonshine/sounds/knob.mp3"]           = "moonshine/sounds/knob.mp3",
-    ["moonshine/sounds/minecraft orb.mp3"]  = "moonshine/sounds/minecraft%20orb.mp3",
-    ["moonshine/sounds/neverlose.mp3"]      = "moonshine/sounds/neverlose.mp3",
-    ["moonshine/sounds/rust.mp3"]           = "moonshine/sounds/rust.mp3",
-    ["moonshine/sounds/skeet.mp3"]          = "moonshine/sounds/skeet.mp3",
-    ["moonshine/skyboxes.json"]              = "moonshine/skyboxes.json",
+    ["catnip/images/cover.png"]           = "catnip/images/embedcover.png",
+    ["catnip/images/embedcover.png"]      = "catnip/images/embedcover.png",
+    ["catnip/images/paw.png"]           = "catnip/images/paw.png",
+    ["catnip/images/W AZULA.png"]        = "catnip/images/W%20AZULA.png",
+    ["catnip/txts/W AZULA.txt"]          = "catnip/txts/W%20AZULA.txt",
+    ["catnip/sounds/12.mp3"]             = "catnip/sounds/12.mp3",
+    ["catnip/sounds/agpa2.mp3"]          = "catnip/sounds/agpa2.mp3",
+    ["catnip/sounds/basshit.mp3"]        = "catnip/sounds/basshit.mp3",
+    ["catnip/sounds/bell.mp3"]           = "catnip/sounds/bell.mp3",
+    ["catnip/sounds/blizzard.mp3"]       = "catnip/sounds/blizzard.mp3",
+    ["catnip/sounds/bubble.mp3"]         = "catnip/sounds/bubble.mp3",
+    ["catnip/sounds/chockpro.mp3"]       = "catnip/sounds/chockpro.mp3",
+    ["catnip/sounds/cod.mp3"]            = "catnip/sounds/cod.mp3",
+    ["catnip/sounds/copperbell.mp3"]     = "catnip/sounds/copperbell.mp3",
+    ["catnip/sounds/crowbar.mp3"]        = "catnip/sounds/crowbar.mp3",
+    ["catnip/sounds/headshot.mp3"]        = "catnip/sounds/headshot.mp3",
+    ["catnip/sounds/knob.mp3"]           = "catnip/sounds/knob.mp3",
+    ["catnip/sounds/minecraft orb.mp3"]  = "catnip/sounds/minecraft%20orb.mp3",
+    ["catnip/sounds/neverlose.mp3"]      = "catnip/sounds/neverlose.mp3",
+    ["catnip/sounds/rust.mp3"]           = "catnip/sounds/rust.mp3",
+    ["catnip/sounds/skeet.mp3"]          = "catnip/sounds/skeet.mp3",
+    ["catnip/skyboxes.json"]              = "catnip/skyboxes.json",
 }
 
 for _, folder in Folders do
@@ -51,7 +50,7 @@ end
 
 local Library = loadstring(game:HttpGet(BASE_URL .. "/libraries/scoot/Library.lua", true))()
 
-local logoPath = "moonshine/images/moon.png"
+local logoPath = "catnip/images/paw.png"
 local logoImage = isfile(logoPath) and getcustomasset(logoPath) or ""
 
 local Popup = Library:LoadingPopup({
@@ -107,7 +106,7 @@ end
 if #MissingFunctions > 0 then
     Popup:Dismiss()
     Library:Notification("Incompatible Executor", "Missing: " .. table.concat(MissingFunctions, ", "), 10)
-    warn("[moonshine] Executor is missing critical functions even after Quartz polyfill: " .. table.concat(MissingFunctions, ", "))
+    warn("[catnip] Executor is missing critical functions even after Quartz polyfill: " .. table.concat(MissingFunctions, ", "))
     return
 end
 

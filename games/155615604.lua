@@ -1,8 +1,8 @@
 --Prison Life
-local Library = loadstring(game:HttpGet("https://github.com/catthatdrinkssprite/moonshine/raw/main/libraries/scoot/Library.lua"))()
+local Library = loadstring(game:HttpGet("https://github.com/catthatdrinkssprite/catnip/raw/main/libraries/scoot/Library.lua"))()
 
 local Window = Library:Window({
-    Logo = getcustomasset("moonshine/images/moon.png"),
+    Logo = getcustomasset("catnip/images/paw.png"),
     FadeTime = 0.3,
 })
 
@@ -105,7 +105,7 @@ do
     local ItemESPDrawings = {}
     local ItemESPHighlights = {}
     local ItemESPChamsFolder = Instance.new("Folder")
-    ItemESPChamsFolder.Name = "MoonshineItemChams"
+    ItemESPChamsFolder.Name = "catnipItemChams"
     ItemESPChamsFolder.Parent = game:GetService("CoreGui")
 
     local function ResolvePickupPart(obj)
@@ -133,7 +133,7 @@ do
 
             local ping = game.Players.LocalPlayer:GetNetworkPing()
             local pingMs = math.floor(ping * 1000)
-            Watermark:SetText(string.format("moonshine | Prison Life | %d FPS | %dms | gg/DPBtncwaEm", LastFPS, pingMs))
+            Watermark:SetText(string.format("catnip | Prison Life | %d FPS | %dms | gg/DPBtncwaEm", LastFPS, pingMs))
 
             if PingWarningEnabled and ping >= PingThreshold and (now - LastPingWarning) >= PingCooldown then
                 LastPingWarning = now
@@ -927,22 +927,22 @@ do
 
         do
             local SoundFiles = {
-                ["12.mp3"] = getcustomasset("moonshine/sounds/12.mp3"),
-                ["agpa2.mp3"] = getcustomasset("moonshine/sounds/agpa2.mp3"),
-                ["basshit.mp3"] = getcustomasset("moonshine/sounds/basshit.mp3"),
-                ["bell.mp3"] = getcustomasset("moonshine/sounds/bell.mp3"),
-                ["blizzard.mp3"] = getcustomasset("moonshine/sounds/blizzard.mp3"),
-                ["bubble.mp3"] = getcustomasset("moonshine/sounds/bubble.mp3"),
-                ["chockpro.mp3"] = getcustomasset("moonshine/sounds/chockpro.mp3"),
-                ["cod.mp3"] = getcustomasset("moonshine/sounds/cod.mp3"),
-                ["copperbell.mp3"] = getcustomasset("moonshine/sounds/copperbell.mp3"),
-                ["crowbar.mp3"] = getcustomasset("moonshine/sounds/crowbar.mp3"),
-                ["headshot.mp3"] = getcustomasset("moonshine/sounds/headshot.mp3"),
-                ["knob.mp3"] = getcustomasset("moonshine/sounds/knob.mp3"),
-                ["minecraft orb.mp3"] = getcustomasset("moonshine/sounds/minecraft orb.mp3"),
-                ["neverlose.mp3"] = getcustomasset("moonshine/sounds/neverlose.mp3"),
-                ["rust.mp3"] = getcustomasset("moonshine/sounds/rust.mp3"),
-                ["skeet.mp3"] = getcustomasset("moonshine/sounds/skeet.mp3"),
+                ["12.mp3"] = getcustomasset("catnip/sounds/12.mp3"),
+                ["agpa2.mp3"] = getcustomasset("catnip/sounds/agpa2.mp3"),
+                ["basshit.mp3"] = getcustomasset("catnip/sounds/basshit.mp3"),
+                ["bell.mp3"] = getcustomasset("catnip/sounds/bell.mp3"),
+                ["blizzard.mp3"] = getcustomasset("catnip/sounds/blizzard.mp3"),
+                ["bubble.mp3"] = getcustomasset("catnip/sounds/bubble.mp3"),
+                ["chockpro.mp3"] = getcustomasset("catnip/sounds/chockpro.mp3"),
+                ["cod.mp3"] = getcustomasset("catnip/sounds/cod.mp3"),
+                ["copperbell.mp3"] = getcustomasset("catnip/sounds/copperbell.mp3"),
+                ["crowbar.mp3"] = getcustomasset("catnip/sounds/crowbar.mp3"),
+                ["headshot.mp3"] = getcustomasset("catnip/sounds/headshot.mp3"),
+                ["knob.mp3"] = getcustomasset("catnip/sounds/knob.mp3"),
+                ["minecraft orb.mp3"] = getcustomasset("catnip/sounds/minecraft orb.mp3"),
+                ["neverlose.mp3"] = getcustomasset("catnip/sounds/neverlose.mp3"),
+                ["rust.mp3"] = getcustomasset("catnip/sounds/rust.mp3"),
+                ["skeet.mp3"] = getcustomasset("catnip/sounds/skeet.mp3"),
             }
 
             local Players = game:GetService("Players")
@@ -1532,7 +1532,7 @@ do
 
             local ActiveHighlights = {}
             local ChamsFolder = Instance.new("Folder")
-            ChamsFolder.Name = "MoonshineChams"
+            ChamsFolder.Name = "catnipChams"
             ChamsFolder.Parent = game:GetService("CoreGui")
 
             local ESPSection = ESPSubPage:Section({Name = "ESP", Side = 2}) do
@@ -2200,7 +2200,7 @@ do
         local ObjectsSubPage = WorldPage:SubPage({Name = "Objects", Columns = 2})
 
         local DoorStorage = game:GetService("Lighting")
-        local StorageName = "MoonshineDoorStorage"
+        local StorageName = "catnipDoorStorage"
 
         local RemoveDoors = ObjectsSubPage:Section({Name = "Remove Doors", Side = 1}) do
             RemoveDoors:Toggle({
@@ -2350,8 +2350,8 @@ do
         local SkyboxNames = {"Default"}
         do
             local ok, raw = pcall(function()
-                if isfile("moonshine/skyboxes.json") then
-                    return readfile("moonshine/skyboxes.json")
+                if isfile("catnip/skyboxes.json") then
+                    return readfile("catnip/skyboxes.json")
                 end
                 return nil
             end)
@@ -2516,7 +2516,7 @@ do
             if not sky then
                 if not ManagedSky then
                     ManagedSky = Instance.new("Sky")
-                    ManagedSky.Name = "MoonshineSky"
+                    ManagedSky.Name = "catnipSky"
                     ManagedSky.Parent = Lighting
                 end
                 sky = ManagedSky

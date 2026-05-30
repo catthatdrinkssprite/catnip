@@ -81,10 +81,10 @@ local Library do
         },
 
         Images = {
-            ["Saturation"] = {"Saturation.png", "https://github.com/catthatdrinkssprite/moonshine/blob/main/libraries/scoot/images/saturation.png?raw=true" },
-            ["Value"] = { "Value.png", "https://github.com/catthatdrinkssprite/moonshine/blob/main/libraries/scoot/images/value.png?raw=true" },
-            ["Hue"] = { "Hue.png", "https://github.com/catthatdrinkssprite/moonshine/blob/main/libraries/scoot/images/horizontalhue.png?raw=true" },
-            ["Checkers"] = { "Checkers.png", "https://github.com/catthatdrinkssprite/moonshine/blob/main/libraries/scoot/images/checkers.png?raw=true" },
+            ["Saturation"] = {"Saturation.png", "https://github.com/catthatdrinkssprite/catnip/blob/main/libraries/scoot/images/saturation.png?raw=true" },
+            ["Value"] = { "Value.png", "https://github.com/catthatdrinkssprite/catnip/blob/main/libraries/scoot/images/value.png?raw=true" },
+            ["Hue"] = { "Hue.png", "https://github.com/catthatdrinkssprite/catnip/blob/main/libraries/scoot/images/horizontalhue.png?raw=true" },
+            ["Checkers"] = { "Checkers.png", "https://github.com/catthatdrinkssprite/catnip/blob/main/libraries/scoot/images/checkers.png?raw=true" },
         },
 
         -- Ignore below
@@ -229,7 +229,7 @@ local Library do
             ["Text"] = FromRGB(235, 235, 235),
             ["Text Stroke"] = FromRGB(0, 0, 0),
             ["Placeholder Text"] = FromRGB(185, 185, 185),
-            ["Accent"] = FromRGB(202, 243, 255)
+            ["Accent"] = FromRGB(130, 174, 143)
         }
     }
 
@@ -769,7 +769,7 @@ local Library do
         end
 
         CustomFont:New("Monaco", 400, "Regular", {
-            Url = "https://github.com/catthatdrinkssprite/moonshine/raw/refs/heads/main/libraries/scoot/fonts/Monaco.ttf"
+            Url = "https://github.com/catthatdrinkssprite/catnip/raw/refs/heads/main/libraries/scoot/fonts/Monaco.ttf"
         })
 
         Library.Font = CustomFont:Get("Monaco")
