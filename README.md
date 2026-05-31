@@ -11,7 +11,7 @@ a free and fully opensource script hub
 ## 🎮 supported games
 | game name | place id | lines of code |
 | --- | --- | --- |
-| prison life | 155615604 | ~4000 |
+| prison life | 155615604 | ~5000 |
 
 ## 💻 recommended executors
 | executor | sunc | price |
