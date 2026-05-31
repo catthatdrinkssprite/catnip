@@ -30,6 +30,7 @@ do
     local CleanupCallbacks = {}
     local TrackedDrawings = {}
     local TrackedConnections = {}
+    local ScriptAlive = true
 
     local function RegisterCleanup(fn)
         table.insert(CleanupCallbacks, fn)
@@ -79,14 +80,28 @@ do
         return Connection
     end
 
-    local MasterRenderConnection = RunService.RenderStepped:Connect(function(Delta)
+    local MasterRenderConnection
+    local function StopAllRenderers()
+        if MasterRenderConnection and MasterRenderConnection.Connected then
+            MasterRenderConnection:Disconnect()
+        end
+        for _, connection in RenderCache do
+            if connection and connection.Disconnect then
+                pcall(connection.Disconnect, connection)
+            end
+        end
+        table.clear(RenderCache)
+    end
+
+    MasterRenderConnection = RunService.RenderStepped:Connect(function(Delta)
+        if not ScriptAlive then return end
         for _, Connection in RenderCache do
-            Connection.Function(Delta)
+            if Connection and Connection.Function then
+                Connection.Function(Delta)
+            end
         end
     end)
-    RegisterCleanup(function()
-        MasterRenderConnection:Disconnect()
-    end)
+    RegisterCleanup(StopAllRenderers)
 
     local PingWarningEnabled = false
     local KillfeedNotificationsEnabled = false
@@ -548,10 +563,33 @@ do
     end)
 
     RegisterCleanup(function()
+        local bulletNames, shootNames = {}, {}
+        for _, h in bulletHandlers do
+            table.insert(bulletNames, h[1])
+        end
+        for _, name in bulletNames do
+            PL.removeBulletHandler(name)
+        end
+        for name in shootHandlers do
+            table.insert(shootNames, name)
+        end
+        for _, name in shootNames do
+            PL.removeShootHandler(name)
+        end
         PL.removeBulletHook()
         PL.removeShootHook()
+        if PL.TracerHook and PL.TracerHook.Hooks then
+            local tracerKeys = {}
+            for _, h in PL.TracerHook.Hooks do
+                table.insert(tracerKeys, h[1])
+            end
+            for _, key in tracerKeys do
+                PL.TracerHook:Remove(key)
+            end
+        end
         if oldGunTracer and PL.GunTracers then
             pcall(function() hookfunction(PL.GunTracers.createBullet, oldGunTracer) end)
+            oldGunTracer = nil
         end
     end)
 
@@ -1352,7 +1390,7 @@ do
             for _, obj in CollectionService:GetTagged("C4") do trackC4(obj) end
 
             task.spawn(function()
-                while true do
+                while ScriptAlive do
                     if ADEnabled and localC4 and localC4.Parent then
                         local backpack = LocalPlayer:FindFirstChildWhichIsA("Backpack")
                         local tool = backpack and backpack:FindFirstChild("C4 Explosive")
@@ -1408,7 +1446,7 @@ do
             })
 
             task.spawn(function()
-                while true do
+                while ScriptAlive do
                     if AHEnabled and LocalPlayer.Character then
                         local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
                         local backpack = LocalPlayer:FindFirstChildWhichIsA("Backpack")
@@ -1746,7 +1784,7 @@ do
         })
         local carContainerVS = workspace:FindFirstChild("CarContainer")
         task.spawn(function()
-            while true do
+            while ScriptAlive do
                 if VSState.Enabled and carContainerVS and LocalPlayer.Character then
                     local seat = LocalPlayer.Character:FindFirstChildOfClass("Humanoid") and LocalPlayer.Character.Humanoid.SeatPart
                     if seat and seat:IsDescendantOf(carContainerVS) then
@@ -3893,7 +3931,7 @@ do
             end))
 
             task.spawn(function()
-                while true do
+                while ScriptAlive do
                     if PAState.Enabled and next(PAState.Items) and LocalPlayer.Character then
                         local now = tick()
                         if (now - PALastTick) >= PAState.Cooldown then
@@ -5119,18 +5157,65 @@ do
 
     local OriginalUnload = Library.Unload
     Library.Unload = function(self)
-        for _, conn in ipairs(TrackedConnections) do
-            pcall(function() conn:Disconnect() end)
+        if not ScriptAlive then
+            return OriginalUnload(self)
         end
-        TrackedConnections = {}
+        ScriptAlive = false
+
+        RagebotForcedTarget = nil
+        RagebotMuzzleOrigin = nil
+        PingWarningEnabled = false
+        KillfeedNotificationsEnabled = false
+        ItemESPState.Enabled = false
+
+        StopAllRenderers()
+
         for i = #CleanupCallbacks, 1, -1 do
             pcall(CleanupCallbacks[i])
         end
-        for _, drawing in ipairs(TrackedDrawings) do
-            pcall(drawing.Remove, drawing)
+        table.clear(CleanupCallbacks)
+
+        for _, conn in TrackedConnections do
+            pcall(function() conn:Disconnect() end)
         end
-        CleanupCallbacks = {}
-        TrackedDrawings = {}
+        table.clear(TrackedConnections)
+
+        for _, drawing in TrackedDrawings do
+            pcall(function()
+                if drawing.Remove then
+                    drawing:Remove()
+                elseif drawing.Destroy then
+                    drawing:Destroy()
+                end
+            end)
+        end
+        table.clear(TrackedDrawings)
+
+        pcall(function()
+            if ItemESPChamsFolder and ItemESPChamsFolder.Parent then
+                ItemESPChamsFolder:Destroy()
+            end
+        end)
+
+        pcall(function()
+            local lp = game:GetService("Players").LocalPlayer
+            local char = lp and lp.Character
+            if not char then return end
+            for _, v in char:GetDescendants() do
+                if v:IsA("BasePart") or v:IsA("Texture") or v:IsA("Decal") then
+                    v.LocalTransparencyModifier = 0
+                end
+            end
+            local cam = workspace.CurrentCamera
+            if cam then
+                for _, child in cam:GetChildren() do
+                    if child:IsA("Tool") then
+                        child:Destroy()
+                    end
+                end
+            end
+        end)
+
         OriginalUnload(self)
     end
 end
