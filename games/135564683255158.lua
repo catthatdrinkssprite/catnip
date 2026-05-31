@@ -1,5 +1,5 @@
 --Prison Life
-local Library = loadstring(game:HttpGet("https://github.com/catthatdrinkssprite/catnip/raw/main/libraries/scoot/Library.lua"))()
+local Library = loadstring(game:HttpGet("https://github.com/catthatdrinkssprite/catnip/raw/main/library/Library.lua"))()
 
 local Window = Library:Window({
     Logo = getcustomasset("catnip/images/paw.png"),
@@ -142,171 +142,458 @@ do
         end)
     end
 
+    -- Prison Life shared core (Vape parity)
+    local PL = {
+        Shoot = nil,
+        Bullet = nil,
+        Reload = nil,
+        GunTracers = nil,
+    }
+    local PLTargeting = {}
+    local aimTimer, shootTimer, aimVec = os.clock(), os.clock(), Vector3.zero
+
+    local PlayersService = game:GetService("Players")
+    local LocalPlayer = PlayersService.LocalPlayer
+    local UserInputService = game:GetService("UserInputService")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local CollectionService = game:GetService("CollectionService")
+    local TweenService = game:GetService("TweenService")
+    local Teams = game:GetService("Teams")
+    local PLCamera = workspace.CurrentCamera
+
+    local WallbangRayGuard = false
+    local function GuardedRaycast(origin, direction, params)
+        WallbangRayGuard = true
+        local ok, result = pcall(workspace.Raycast, workspace, origin, direction, params)
+        WallbangRayGuard = false
+        return ok and result or nil
+    end
+
+    local function GuardedGetPartBoundsInBox(cframe, size, params)
+        WallbangRayGuard = true
+        local ok, result = pcall(workspace.GetPartBoundsInBox, workspace, cframe, size, params)
+        WallbangRayGuard = false
+        return ok and result or {}
+    end
+
+    PL.OriginScanner = {}
     do
-        local GunModsSubPage = CombatPage:SubPage({Name = "Gun Mods", Columns = 2})
+        local rayParams = RaycastParams.new()
+        rayParams.CollisionGroup = "ClientBullet"
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        local rayParams2 = OverlapParams.new()
+        rayParams2.CollisionGroup = "ClientBullet"
+        rayParams2.FilterType = Enum.RaycastFilterType.Exclude
+        PL.OriginScanner.Ray = rayParams
+        PL.OriginScanner.Overlap = rayParams2
 
-        do
-            local LP = game:GetService("Players").LocalPlayer
-            local OriginalValues = {}
-            local GunModConnections = {}
+        local scanOffsets = {
+            Vector3.new(0, 1, 0), Vector3.new(1, 0, 0), Vector3.new(0.7, -0.5, -0.5),
+            Vector3.new(-0.1, -0.8, -0.8), Vector3.new(-0.8, -0.5, -0.5), Vector3.new(-1, 0, 0),
+            Vector3.new(-0.8, 0.4, 0.4), Vector3.new(0, 0.7, 0.7), Vector3.new(0.7, 0.5, 0.5),
+            Vector3.new(1, 0, 0), Vector3.new(0.7, 0, -0.8), Vector3.new(-0.1, 0, -1),
+            Vector3.new(-0.8, 0, -0.8), Vector3.new(-1, 0, 0), Vector3.new(-0.8, 0, 0.7),
+            Vector3.new(0, 0, 1), Vector3.new(0.7, 0, 0.7), Vector3.new(1, 0, 0),
+            Vector3.new(0.7, 0.4, -0.5), Vector3.new(-0.1, 0.7, -0.8), Vector3.new(-0.8, 0.4, -0.5),
+            Vector3.new(-1, -0.1, 0), Vector3.new(-0.8, -0.5, 0.4), Vector3.new(0, -0.8, 0.7),
+            Vector3.new(0.7, -0.6, 0.5), Vector3.new(0, -1, 0),
+        }
+        local wallbangIgnoreList = {}
 
-            local function GetToolKey(tool)
-                return tostring(tool) .. "_" .. tool:GetDebugId()
+        local function RefreshWallbangIgnoreList()
+            table.clear(wallbangIgnoreList)
+            local localCharacter = LocalPlayer.Character
+            if localCharacter then table.insert(wallbangIgnoreList, localCharacter) end
+            for _, player in ipairs(PlayersService:GetPlayers()) do
+                if player.Character then table.insert(wallbangIgnoreList, player.Character) end
             end
+            rayParams.FilterDescendantsInstances = wallbangIgnoreList
+            rayParams2.FilterDescendantsInstances = wallbangIgnoreList
+        end
 
-            local function GetAllTools()
-                local tools = {}
-                for _, tool in pairs(LP.Backpack:GetChildren()) do
-                    if tool:IsA("Tool") then table.insert(tools, tool) end
+        function PL.OriginScanner:UpdateIgnore()
+            rayParams.FilterDescendantsInstances = wallbangIgnoreList
+            rayParams2.FilterDescendantsInstances = wallbangIgnoreList
+        end
+
+        RefreshWallbangIgnoreList()
+        TrackConnection(PlayersService.PlayerAdded:Connect(function(player)
+            RefreshWallbangIgnoreList()
+            TrackConnection(player.CharacterAdded:Connect(RefreshWallbangIgnoreList))
+        end))
+        TrackConnection(PlayersService.PlayerRemoving:Connect(RefreshWallbangIgnoreList))
+        TrackConnection(LocalPlayer.CharacterAdded:Connect(RefreshWallbangIgnoreList))
+
+        function PL.OriginScanner:Scan(origin, target, ...)
+            local scanPositions = {}
+            for _, v in {...} do
+                if (origin - v).Magnitude < 7.5 then table.insert(scanPositions, v) end
+            end
+            for i = 5, 7 do
+                for _, v in scanOffsets do
+                    table.insert(scanPositions, origin + v * i)
                 end
-                local char = LP.Character
-                if char then
-                    for _, tool in pairs(char:GetChildren()) do
-                        if tool:IsA("Tool") then table.insert(tools, tool) end
-                    end
+            end
+            for _, pos in scanPositions do
+                local ray = GuardedRaycast(target, (pos - target), rayParams)
+                if not ray and #GuardedGetPartBoundsInBox(CFrame.new(pos), Vector3.one * 0.1, rayParams2) <= 0 then
+                    return pos
                 end
-                return tools
-            end
-
-            local function SaveOriginal(tool, attr)
-                local key = GetToolKey(tool)
-                if not OriginalValues[key] then OriginalValues[key] = {} end
-                if OriginalValues[key][attr] == nil then
-                    OriginalValues[key][attr] = tool:GetAttribute(attr)
-                end
-            end
-
-            local function RestoreOriginal(tool, attr)
-                local key = GetToolKey(tool)
-                if OriginalValues[key] and OriginalValues[key][attr] ~= nil then
-                    tool:SetAttribute(attr, OriginalValues[key][attr])
-                    OriginalValues[key][attr] = nil
-                    if not next(OriginalValues[key]) then OriginalValues[key] = nil end
-                end
-            end
-
-            local function ApplyMod(tool, attr, value, flagGet)
-                if not tool:IsA("Tool") then return end
-                if tool:GetAttribute(attr) == nil then return end
-                if flagGet() ~= true then return end
-                SaveOriginal(tool, attr)
-                tool:SetAttribute(attr, value)
-            end
-
-            local function RevertMod(attr)
-                for _, tool in pairs(GetAllTools()) do
-                    RestoreOriginal(tool, attr)
-                end
-            end
-
-            local GunModFlags = {
-                NoFireRate = false,
-                NoSpread = false,
-                ForceAutoFire = false,
-            }
-
-            local function ApplyAllMods(tool)
-                ApplyMod(tool, "FireRate", 0, function() return GunModFlags.NoFireRate end)
-                ApplyMod(tool, "SpreadRadius", 0, function() return GunModFlags.NoSpread end)
-                ApplyMod(tool, "AutoFire", true, function() return GunModFlags.ForceAutoFire end)
-            end
-
-            local function ConnectContainer(container)
-                local conn = container.ChildAdded:Connect(function(tool)
-                    if tool:IsA("Tool") then
-                        task.defer(ApplyAllMods, tool)
-                    end
-                end)
-                table.insert(GunModConnections, conn)
-            end
-
-            ConnectContainer(LP.Backpack)
-            if LP.Character then ConnectContainer(LP.Character) end
-            local charConn = LP.CharacterAdded:Connect(function(char)
-                ConnectContainer(char)
-                task.defer(function()
-                    for _, tool in pairs(GetAllTools()) do
-                        ApplyAllMods(tool)
-                    end
-                end)
-            end)
-            table.insert(GunModConnections, charConn)
-
-            local NoFireRate = GunModsSubPage:Section({Name = "No Fire Rate", Side = 1}) do
-                NoFireRate:Toggle({
-                    Name = "Enabled",
-                    ToolTip = {
-                        Name = "No Fire Rate",
-                        Description = "Sets weapon fire delay to zero — cap FPS to 60 or bullets arrive instantly"
-                    },
-                    Flag = "NoFireRateEnabled",
-                    Default = false,
-                    Callback = function(state)
-                        GunModFlags.NoFireRate = state
-                        if state then
-                            if not NotificationShown["NoFireRate"] then
-                                NotificationShown["NoFireRate"] = true
-                                Library:Notification("Warning.", "It is recommended to use 60 FPS or below unless you want your bullets to come instantly.", 5)
-                            end
-                            for _, tool in pairs(GetAllTools()) do
-                                ApplyMod(tool, "FireRate", 0, function() return true end)
-                            end
-                        else
-                            RevertMod("FireRate")
-                        end
-                    end
-                })
-            end
-
-            local NoSpread = GunModsSubPage:Section({Name = "No Spread", Side = 2}) do
-                NoSpread:Toggle({
-                    Name = "Enabled",
-                    ToolTip = {
-                        Name = "No Spread",
-                        Description = "Removes bullet spread for perfect accuracy on every shot"
-                    },
-                    Flag = "NoSpreadEnabled",
-                    Default = false,
-                    Callback = function(state)
-                        GunModFlags.NoSpread = state
-                        if state then
-                            for _, tool in pairs(GetAllTools()) do
-                                ApplyMod(tool, "SpreadRadius", 0, function() return true end)
-                            end
-                        else
-                            RevertMod("SpreadRadius")
-                        end
-                    end
-                })
-            end
-
-            RegisterCleanup(function()
-                for _, conn in pairs(GunModConnections) do conn:Disconnect() end
-                for _, attr in pairs({"FireRate", "SpreadRadius", "AutoFire"}) do RevertMod(attr) end
-            end)
-
-            local ForceAutoFire = GunModsSubPage:Section({Name = "Force Auto Fire", Side = 1}) do
-                ForceAutoFire:Toggle({
-                    Name = "Enabled",
-                    ToolTip = {
-                        Name = "Force Auto Fire",
-                        Description = "Makes all weapons fully automatic — hold click to spray"
-                    },
-                    Flag = "ForceAutoFireEnabled",
-                    Default = false,
-                    Callback = function(state)
-                        GunModFlags.ForceAutoFire = state
-                        if state then
-                            for _, tool in pairs(GetAllTools()) do
-                                ApplyMod(tool, "AutoFire", true, function() return true end)
-                            end
-                        else
-                            RevertMod("AutoFire")
-                        end
-                    end
-                })
             end
         end
+    end
+
+    function PL.resolveShoot()
+        local home = LocalPlayer.PlayerGui:FindFirstChild("Home")
+        local actionArea = home and home:FindFirstChild("hud") and home.hud:FindFirstChild("ActionArea")
+        if not actionArea then return false end
+        for _, connection in getconnections(actionArea.InputBegan) do
+            local shootFn = connection.Function and debug.getupvalue(connection.Function, 2)
+            if shootFn then
+                PL.Shoot = shootFn
+                PL.Reload = debug.getupvalue(shootFn, 2)
+                PL.Bullet = debug.getupvalue(shootFn, 16)
+                return PL.Bullet ~= nil
+            end
+        end
+        return false
+    end
+
+    function PL.getGunData()
+        if PL.Shoot then
+            return debug.getupvalue(PL.Shoot, 10)
+        end
+    end
+
+    function PL.getMousePosition()
+        if UserInputService.TouchEnabled then
+            return PLCamera.ViewportSize / 2
+        end
+        return UserInputService:GetMouseLocation()
+    end
+
+    function PL.GetInmateStatus(character)
+        local humanoid = character:FindFirstChild("Humanoid")
+        if not humanoid then return "Regular" end
+        local displayName = humanoid.DisplayName
+        if string.sub(displayName, 1, 4) == "\xF0\x9F\x94\x97" then return "Arrestable"
+        elseif string.sub(displayName, 1, 4) == "\xF0\x9F\x92\xA2" then return "Aggressive" end
+        return "Regular"
+    end
+
+    function PL.passesCombatFilters(player, character, filters)
+        local isBlacklisted = filters.Blacklist and (filters.Blacklist[player.Name] or (filters.AutoBlacklist and filters.AutoBlacklist[player.Name]))
+        local teamName = player.Team and player.Team.Name or ""
+        local myTeam = LocalPlayer.Team and LocalPlayer.Team.Name or ""
+
+        if isBlacklisted and teamName == myTeam and teamName ~= "Inmates" then return false end
+        if isBlacklisted and teamName == "Inmates" and PL.GetInmateStatus(character) == "Regular" then return false end
+
+        if not isBlacklisted then
+            if filters.Whitelist and filters.Whitelist[player.Name] then return false end
+            if filters.FriendCheck and FriendsCache[player.Name] then return false end
+            if filters.Teams and next(filters.Teams) and not filters.Teams[teamName] then return false end
+            if teamName == "Inmates" then
+                local holdingTaser = filters.HoldingTaser
+                local needStatus = (filters.InmateTypes and next(filters.InmateTypes)) or (filters.ArrestSafety and not holdingTaser)
+                if needStatus then
+                    local status = PL.GetInmateStatus(character)
+                    if filters.InmateTypes and next(filters.InmateTypes) and not filters.InmateTypes[status] then return false end
+                    if filters.ArrestSafety and not holdingTaser and status == "Arrestable" then return false end
+                end
+            end
+        end
+
+        local humanoid = character:FindFirstChild("Humanoid")
+        if filters.DeathCheck and (not humanoid or humanoid.Health <= 0) then return false end
+        if filters.ForceFieldCheck and character:FindFirstChild("ForceField") then return false end
+        return true
+    end
+
+    function PL.wallcheck(shootOrigin, targetPos, wallbangRootPos)
+        PL.OriginScanner:UpdateIgnore()
+        local ray = GuardedRaycast(targetPos, shootOrigin - targetPos, PL.OriginScanner.Ray)
+        if ray then
+            return not wallbangRootPos or not PL.OriginScanner:Scan(wallbangRootPos, targetPos, ray.Position + ray.Normal * 0.05)
+        end
+        return false
+    end
+
+    function PLTargeting.getClosestPart(settings)
+        local origin = settings.Origin or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position)
+        if not origin then return nil end
+
+        local localCharacter = LocalPlayer.Character
+        if not localCharacter then return nil end
+        local root = localCharacter:FindFirstChild("HumanoidRootPart")
+        if not root then return nil end
+
+        if settings.RollChance and settings.AimRandom and settings.AimRandom:NextNumber(0, 100) > (settings.HitChance or 100) then
+            return nil
+        end
+
+        local boneName = "HumanoidRootPart"
+        if settings.HeadshotChance and settings.AimRandom then
+            boneName = settings.AimRandom:NextNumber(0, 100) < settings.HeadshotChance and "Head" or "HumanoidRootPart"
+        elseif settings.Bone then
+            boneName = settings.Bone
+        end
+
+        local aimRange = settings.Range or 150
+        if settings.Mode == "Position" and settings.RangeLimit then
+            aimRange = math.min(aimRange, settings.RangeLimit)
+        end
+
+        local wallbangRoot = settings.Wallbang and root.Position or nil
+        local sortingTable = {}
+        local mousePos = PL.getMousePosition()
+        local filters = settings.Filters or {}
+
+        for _, player in PlayersService:GetPlayers() do
+            if player == LocalPlayer then continue end
+            local character = player.Character
+            if not character then continue end
+            if not PL.passesCombatFilters(player, character, filters) then continue end
+
+            if player.Team == Teams.Inmates then
+                if not (character:GetAttribute("Trespassing") or character:GetAttribute("Hostile")) then continue end
+                if settings.AttackCheck and LocalPlayer.Team == Teams.Guards and not character:GetAttribute("Hostile") then continue end
+            end
+
+            local targetPart = character:FindFirstChild(boneName) or character:FindFirstChild("HumanoidRootPart")
+            if not targetPart then continue end
+
+            local magnitude
+            if settings.Mode == "Mouse" then
+                local screenPos, onScreen = PLCamera:WorldToViewportPoint(targetPart.Position)
+                if not onScreen then continue end
+                magnitude = (mousePos - Vector2.new(screenPos.X, screenPos.Y)).Magnitude
+            else
+                magnitude = (targetPart.Position - origin).Magnitude
+            end
+
+            if magnitude > aimRange then continue end
+            if PL.wallcheck(origin, targetPart.Position, wallbangRoot) then continue end
+
+            table.insert(sortingTable, {Part = targetPart, Magnitude = magnitude, Player = player})
+        end
+
+        table.sort(sortingTable, function(a, b) return a.Magnitude < b.Magnitude end)
+        return sortingTable[1] and sortingTable[1].Part or nil, sortingTable[1] and sortingTable[1].Player or nil
+    end
+
+    function PLTargeting.allPositions(settings)
+        local origin = settings.Origin or (LocalPlayer.Character and LocalPlayer.Character.HumanoidRootPart and LocalPlayer.Character.HumanoidRootPart.Position)
+        if not origin then return {} end
+        local results = {}
+        local wallbangRoot = settings.Wallbang and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position or nil
+        local filters = settings.Filters or {}
+
+        for _, player in PlayersService:GetPlayers() do
+            if player == LocalPlayer then continue end
+            local character = player.Character
+            if not character then continue end
+            if not PL.passesCombatFilters(player, character, filters) then continue end
+            if player.Team == Teams.Inmates and settings.AttackCheck and LocalPlayer.Team == Teams.Guards and not character:GetAttribute("Hostile") then continue end
+
+            local targetPart = character:FindFirstChild(settings.Bone or "HumanoidRootPart") or character:FindFirstChild("HumanoidRootPart")
+            if not targetPart then continue end
+            local magnitude = (targetPart.Position - origin).Magnitude
+            if magnitude > (settings.Range or 12) then continue end
+            if settings.Wallcheck ~= false and PL.wallcheck(origin, targetPart.Position, wallbangRoot) then continue end
+            table.insert(results, {Part = targetPart, Player = player, Magnitude = magnitude})
+        end
+        table.sort(results, function(a, b) return a.Magnitude < b.Magnitude end)
+        if settings.Limit then
+            while #results > settings.Limit do table.remove(results) end
+        end
+        return results
+    end
+
+    function PL.applyWallbang(origin, targetPos)
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not root then return origin end
+        PL.OriginScanner:UpdateIgnore()
+        local ray = GuardedRaycast(targetPos, origin - targetPos, PL.OriginScanner.Ray)
+        if ray then
+            local newOrigin = PL.OriginScanner:Scan(root.Position, targetPos, ray.Position + ray.Normal * 0.05)
+            if newOrigin then return newOrigin end
+        end
+        return origin
+    end
+
+    PL.TracerHook = {Hooks = {}}
+    local oldGunTracer = nil
+    function PL.TracerHook:Add(key, fn, priority)
+        table.insert(self.Hooks, {key, fn, priority or 0})
+        table.sort(self.Hooks, function(a, b) return a[3] < b[3] end)
+        if not oldGunTracer and PL.GunTracers then
+            oldGunTracer = hookfunction(PL.GunTracers.createBullet, function(...)
+                if debug.info(3, "s") ~= "ReplicatedStorage.Scripts.Replication.ClientReplicator" then
+                    for _, v in self.Hooks do
+                        if v[2](...) then return end
+                    end
+                end
+                return oldGunTracer(...)
+            end)
+        end
+    end
+    function PL.TracerHook:Remove(key)
+        for i, v in self.Hooks do
+            if v[1] == key then table.remove(self.Hooks, i) break end
+        end
+        if oldGunTracer and not next(self.Hooks) then
+            hookfunction(PL.GunTracers.createBullet, oldGunTracer)
+            oldGunTracer = nil
+        end
+    end
+
+    local bulletHandlers = {}
+    local oldBullet = nil
+    local bulletHookActive = false
+
+    function PL.addBulletHandler(name, handler, priority)
+        table.insert(bulletHandlers, {name, handler, priority or 0})
+        table.sort(bulletHandlers, function(a, b) return a[3] < b[3] end)
+        PL.ensureBulletHook()
+    end
+
+    function PL.removeBulletHandler(name)
+        for i, v in bulletHandlers do
+            if v[1] == name then table.remove(bulletHandlers, i) break end
+        end
+        if not next(bulletHandlers) then PL.removeBulletHook() end
+    end
+
+    function PL.ensureBulletHook()
+        if bulletHookActive or not PL.Bullet then return end
+        oldBullet = hookfunction(PL.Bullet, newcclosure(function(...)
+            local args = table.pack(...)
+            for _, h in bulletHandlers do
+                local result = h[2](args)
+                if result == false then return oldBullet(unpack(args, 1, args.n)) end
+            end
+            return oldBullet(unpack(args, 1, args.n))
+        end))
+        bulletHookActive = true
+    end
+
+    function PL.removeBulletHook()
+        if oldBullet and PL.Bullet then
+            if restorefunction then restorefunction(PL.Bullet) else hookfunction(PL.Bullet, oldBullet) end
+            oldBullet = nil
+            bulletHookActive = false
+        end
+    end
+
+    local shootHandlers = {}
+    local oldShootHook = nil
+    local shootHookActive = false
+
+    function PL.addShootHandler(name, handler)
+        shootHandlers[name] = handler
+        PL.ensureShootHook()
+    end
+
+    function PL.removeShootHandler(name)
+        shootHandlers[name] = nil
+        if not next(shootHandlers) then PL.removeShootHook() end
+    end
+
+    function PL.ensureShootHook()
+        if shootHookActive or not PL.Shoot then return end
+        oldShootHook = hookfunction(PL.Shoot, newcclosure(function(...)
+            local args = table.pack(oldShootHook(...))
+            for _, handler in shootHandlers do
+                handler(args)
+            end
+            return unpack(args, 1, args.n)
+        end))
+        shootHookActive = true
+    end
+
+    function PL.removeShootHook()
+        if oldShootHook and PL.Shoot then
+            if restorefunction then restorefunction(PL.Shoot) else hookfunction(PL.Shoot, oldShootHook) end
+            oldShootHook = nil
+            shootHookActive = false
+        end
+    end
+
+    task.spawn(function()
+        while not PL.resolveShoot() do task.wait(0.5) end
+        pcall(function()
+            PL.GunTracers = require(ReplicatedStorage:WaitForChild("SharedModules"):WaitForChild("GunTracers"))
+        end)
+    end)
+
+    RegisterCleanup(function()
+        PL.removeBulletHook()
+        PL.removeShootHook()
+        if oldGunTracer and PL.GunTracers then
+            pcall(function() hookfunction(PL.GunTracers.createBullet, oldGunTracer) end)
+        end
+    end)
+
+    do
+        local GunModsSubPage = CombatPage:SubPage({Name = "Gun Mods", Columns = 2})
+        local GunModState = {Enabled = false, NoSpread = false, FullAuto = false, FireRatePct = 100}
+        local gunModOldData, gunModOldRef = {}, nil
+        local gunModThread = nil
+
+        local function restoreGunData()
+            if gunModOldRef then
+                for i, v in gunModOldData do gunModOldRef[i] = v end
+                table.clear(gunModOldData)
+                gunModOldRef = nil
+            end
+        end
+
+        local function startGunModLoop()
+            if gunModThread then return end
+            gunModThread = task.spawn(function()
+                while GunModState.Enabled do
+                    local data = PL.getGunData()
+                    if data then
+                        if gunModOldRef ~= data then
+                            gunModOldData = table.clone(data)
+                            gunModOldRef = data
+                        end
+                        data.SpreadRadius = GunModState.NoSpread and 0 or gunModOldData.SpreadRadius
+                        data.FireRate = (gunModOldData.FireRate or 0) * (GunModState.FireRatePct / 100)
+                        data.AutoFire = GunModState.FullAuto or gunModOldData.AutoFire
+                    end
+                    task.wait(0.016)
+                end
+                restoreGunData()
+                gunModThread = nil
+            end)
+        end
+
+        local GunModSection = GunModsSubPage:Section({Name = "Gun Modifications", Side = 1})
+        GunModSection:Toggle({
+            Name = "Enabled",
+            Flag = "GunModificationsEnabled",
+            Default = false,
+            Callback = function(v)
+                GunModState.Enabled = v
+                if v then startGunModLoop() else restoreGunData() end
+            end
+        })
+        GunModSection:Slider({
+            Name = "FireRate Multiplier",
+            Flag = "GunModFireRate",
+            Min = 1, Max = 100, Default = 100, Suffix = "%",
+            Callback = function(v) GunModState.FireRatePct = v end
+        })
+        GunModSection:Toggle({Name = "No Spread", Flag = "GunModNoSpread", Default = false, Callback = function(v) GunModState.NoSpread = v end})
+        GunModSection:Toggle({Name = "Full Automatic", Flag = "GunModFullAuto", Default = false, Callback = function(v) GunModState.FullAuto = v end})
+
+        RegisterCleanup(function()
+            GunModState.Enabled = false
+            restoreGunData()
+        end)
     end
 
     do
@@ -316,16 +603,20 @@ do
             local SilentAimSection = AimbotSubPage:Section({Name = "Silent Aim", Side = 1}) do
                 local SilentAimState = {
                     Enabled = false,
+                    AutoFire = false,
                     Triggerbot = false,
                     ArrestSafety = false,
                     FoVCircle = false,
+                    FoVCircleFilled = false,
+                    FoVCircleTransparency = 0.5,
                     FoVCircleColor = Library.Theme.Accent,
                     Tracer = false,
                     TracerColor = Library.Theme.Accent,
-                    Radius = 130,
-                    Bone = "Head",
-                    WallCheck = false,
-                    MuzzleLOS = false,
+                    Mode = "Mouse",
+                    Range = 150,
+                    HitChance = 85,
+                    HeadshotChance = 65,
+                    Wallbang = false,
                     ForceFieldCheck = true,
                     Teams = {},
                     InmateTypes = {},
@@ -334,48 +625,112 @@ do
                     Whitelist = {},
                     Blacklist = {},
                 }
+                local aimRandom = Random.new()
+                local saAutofireThread = nil
 
-                local Camera = workspace.CurrentCamera
-                local Players = game:GetService("Players")
-                local LocalPlayer = Players.LocalPlayer
-                local UserInputService = game:GetService("UserInputService")
-
-                local GetPlayers = Players.GetPlayers
-                local WorldToViewportPoint = Camera.WorldToViewportPoint
-                local GetPartsObscuringTarget = Camera.GetPartsObscuringTarget
-                local FindFirstChild = game.FindFirstChild
-                local GetMouseLocation = UserInputService.GetMouseLocation
-
-                local R6_BONES = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg", "HumanoidRootPart"}
-                local R6_BONE_ITEMS = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg", "HumanoidRootPart", "Random", "Nearest Visible"}
-
-                local function ResolveBone(rawBone, character, localCharacter)
-                    if rawBone == "Random" then
-                        return R6_BONES[math.random(1, #R6_BONES)]
+                local function getSAFilters()
+                    local holdingTaser = false
+                    local char = LocalPlayer.Character
+                    if char and SilentAimState.ArrestSafety then
+                        local tool = char:FindFirstChildOfClass("Tool")
+                        if tool then holdingTaser = tool.Name == "Taser" end
                     end
-                    if rawBone == "Nearest Visible" then
-                        for _, name in ipairs(R6_BONES) do
-                            local part = character:FindFirstChild(name)
-                            if part then
-                                if #GetPartsObscuringTarget(Camera, {part.Position}, {localCharacter, character}) == 0 then
-                                    return name
-                                end
-                            end
-                        end
-                        return "HumanoidRootPart"
-                    end
-                    return rawBone
+                    return {
+                        Teams = SilentAimState.Teams,
+                        InmateTypes = SilentAimState.InmateTypes,
+                        Whitelist = SilentAimState.Whitelist,
+                        Blacklist = SilentAimState.Blacklist,
+                        AutoBlacklist = AutoBlacklistSet,
+                        FriendCheck = SilentAimState.FriendCheck,
+                        DeathCheck = SilentAimState.DeathCheck,
+                        ForceFieldCheck = SilentAimState.ForceFieldCheck,
+                        ArrestSafety = SilentAimState.ArrestSafety,
+                        HoldingTaser = holdingTaser,
+                    }
+                end
+
+                local function saGetTarget(origin, rangeLimit, attackCheck, rollChance)
+                    return PLTargeting.getClosestPart({
+                        Origin = origin,
+                        Mode = SilentAimState.Mode,
+                        Range = SilentAimState.Range,
+                        RangeLimit = rangeLimit,
+                        HitChance = SilentAimState.HitChance,
+                        HeadshotChance = SilentAimState.HeadshotChance,
+                        Wallbang = SilentAimState.Wallbang,
+                        AttackCheck = attackCheck,
+                        RollChance = rollChance,
+                        AimRandom = aimRandom,
+                        Filters = getSAFilters(),
+                    })
                 end
 
                 SilentAimSection:Toggle({
                     Name = "Enabled",
                     ToolTip = {
                         Name = "Silent Aim",
-                        Description = "Redirects bullet raycasts toward the closest valid target without moving your camera"
+                        Description = "Hooks Prison Life bullets toward the closest valid target (Vape-style)"
                     },
                     Flag = "SilentAimEnabled",
                     Default = SilentAimState.Enabled,
-                    Callback = function(v) SilentAimState.Enabled = v end
+                    Callback = function(v)
+                        SilentAimState.Enabled = v
+                        if not v then
+                            PL.removeBulletHandler("SilentAim")
+                            if saAutofireThread then task.cancel(saAutofireThread) saAutofireThread = nil end
+                            return
+                        end
+                        PL.addBulletHandler("SilentAim", function(args)
+                            if not (SilentAimState.Enabled or RagebotForcedTarget) then return end
+                            local origin = args[1]
+                            local gunData = PL.getGunData()
+                            local rangeLimit = gunData and gunData.Range or 1000
+                            local attackCheck = not gunData or gunData.Behavior ~= "Taser"
+                            local hitPart = RagebotForcedTarget or saGetTarget(origin, rangeLimit, attackCheck, true)
+                            if not hitPart then return false end
+                            args[2] = hitPart.Position
+                            aimVec = args[2]
+                            aimTimer = os.clock() + 0.3
+                            shootTimer = os.clock() + 0.3
+                            if SilentAimState.Wallbang then
+                                local newOrigin = PL.applyWallbang(origin, args[2])
+                                for i, v in debug.getstack(3) do
+                                    if v == origin then debug.setstack(3, i, newOrigin) end
+                                end
+                                args[1] = newOrigin
+                            end
+                        end, 1)
+                    end
+                })
+
+                SilentAimSection:Toggle({
+                    Name = "AutoFire",
+                    Flag = "SilentAimAutoFire",
+                    Default = false,
+                    Callback = function(v)
+                        SilentAimState.AutoFire = v
+                        if saAutofireThread then task.cancel(saAutofireThread) saAutofireThread = nil end
+                        if not v then return end
+                        saAutofireThread = task.spawn(function()
+                            while SilentAimState.AutoFire do
+                                if SilentAimState.Enabled and PL.Shoot then
+                                    local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Tool")
+                                    local gunData = PL.getGunData()
+                                    if gunData and tool and (tool:GetAttribute("Local_CurrentAmmo") or 0) > 0 and not tool:GetAttribute("Local_IsShooting") then
+                                        local head = LocalPlayer.Character:FindFirstChild("Head")
+                                        local origin = head and head.Position or Vector3.zero
+                                        local hit = saGetTarget(origin, gunData.Range or 1000, gunData.Behavior ~= "Taser", false)
+                                        if hit and LocalPlayer.Character:FindFirstChild("Humanoid") and LocalPlayer.Character.Humanoid.Health > 0 then
+                                            local obj = {UserInputState = Enum.UserInputState.Begin, UserInputType = Enum.UserInputType.MouseButton1, Position = Vector3.zero}
+                                            task.spawn(PL.Shoot, obj)
+                                            obj.UserInputState = Enum.UserInputState.End
+                                        end
+                                    end
+                                end
+                                task.wait(0.05)
+                            end
+                        end)
+                    end
                 })
 
                 SilentAimSection:Toggle({
@@ -404,7 +759,7 @@ do
                     Name = "FoV Circle",
                     ToolTip = {
                         Name = "FoV Circle",
-                        Description = "Shows a circle around your cursor representing the targeting radius"
+                        Description = "Shows targeting radius on screen (Mouse mode only)"
                     },
                     Flag = "SilentAimFoVEnabled",
                     Default = SilentAimState.FoVCircle,
@@ -415,6 +770,20 @@ do
                     Default = SilentAimState.FoVCircleColor,
                     Alpha = 0,
                     Callback = function(v) SilentAimState.FoVCircleColor = v end
+                })
+
+                SilentAimSection:Slider({
+                    Name = "Circle Transparency",
+                    Flag = "SilentAimFoVTransparency",
+                    Min = 0, Max = 1, Default = 0.5, Decimals = 0.01,
+                    Callback = function(v) SilentAimState.FoVCircleTransparency = v end
+                })
+
+                SilentAimSection:Toggle({
+                    Name = "Circle Filled",
+                    Flag = "SilentAimFoVFilled",
+                    Default = false,
+                    Callback = function(v) SilentAimState.FoVCircleFilled = v end
                 })
 
                 SilentAimSection:Toggle({
@@ -434,46 +803,54 @@ do
                     Callback = function(v) SilentAimState.TracerColor = v end
                 })
 
-                SilentAimSection:Slider({
-                    Name = "Radius",
-                    Flag = "SilentAimRadius",
-                    Min = 1,
-                    Suffix = "px",
-                    Max = 500,
-                    Default = SilentAimState.Radius,
-                    Decimals = 1,
-                    Callback = function(v) SilentAimState.Radius = v end
-                })
-
                 SilentAimSection:Dropdown({
-                    Name = "Bone",
-                    Flag = "SilentAimBone",
-                    Default = SilentAimState.Bone,
+                    Name = "Mode",
+                    Flag = "SilentAimMode",
+                    Default = SilentAimState.Mode,
                     Multi = false,
-                    Items = R6_BONE_ITEMS,
-                    Callback = function(v) SilentAimState.Bone = v end
+                    Items = {"Mouse", "Position"},
+                    Callback = function(v) SilentAimState.Mode = v end
+                })
+
+                SilentAimSection:Slider({
+                    Name = "Range",
+                    Flag = "SilentAimRange",
+                    Min = 1,
+                    Max = 1000,
+                    Default = SilentAimState.Range,
+                    Decimals = 1,
+                    Callback = function(v) SilentAimState.Range = v end
+                })
+
+                SilentAimSection:Slider({
+                    Name = "Hit Chance",
+                    Flag = "SilentAimHitChance",
+                    Min = 0,
+                    Max = 100,
+                    Default = SilentAimState.HitChance,
+                    Suffix = "%",
+                    Callback = function(v) SilentAimState.HitChance = v end
+                })
+
+                SilentAimSection:Slider({
+                    Name = "Headshot Chance",
+                    Flag = "SilentAimHeadshotChance",
+                    Min = 0,
+                    Max = 100,
+                    Default = SilentAimState.HeadshotChance,
+                    Suffix = "%",
+                    Callback = function(v) SilentAimState.HeadshotChance = v end
                 })
 
                 SilentAimSection:Toggle({
-                    Name = "Wall Check",
+                    Name = "Wallbang",
                     ToolTip = {
-                        Name = "Wall Check",
-                        Description = "Skips targets obscured by walls from the camera's perspective"
+                        Name = "Wallbang",
+                        Description = "Shoot through walls when a ClientBullet path exists from your character to the target"
                     },
-                    Flag = "SilentAimWallCheck",
-                    Default = SilentAimState.WallCheck,
-                    Callback = function(v) SilentAimState.WallCheck = v end
-                })
-
-                SilentAimSection:Toggle({
-                    Name = "Muzzle LOS",
-                    ToolTip = {
-                        Name = "Muzzle LOS",
-                        Description = "Raycasts from the gun's muzzle to the target — skips targets that would waste bullets on walls"
-                    },
-                    Flag = "SilentAimMuzzleLOS",
-                    Default = SilentAimState.MuzzleLOS,
-                    Callback = function(v) SilentAimState.MuzzleLOS = v end
+                    Flag = "SilentAimWallbang",
+                    Default = SilentAimState.Wallbang,
+                    Callback = function(v) SilentAimState.Wallbang = v end
                 })
 
                 SilentAimSection:Toggle({
@@ -587,223 +964,37 @@ do
                     Tracer.ZIndex = 999
                     Tracer.Transparency = 1
 
-                    local ExpectedArguments = {
-                        FindPartOnRayWithIgnoreList = {
-                            ArgCountRequired = 3,
-                            Args = {"Instance", "Ray", "table", "boolean", "boolean"}
-                        },
-                        FindPartOnRayWithWhitelist = {
-                            ArgCountRequired = 3,
-                            Args = {"Instance", "Ray", "table", "boolean"}
-                        },
-                        FindPartOnRay = {
-                            ArgCountRequired = 2,
-                            Args = {"Instance", "Ray", "Instance", "boolean", "boolean"}
-                        },
-                        Raycast = {
-                            ArgCountRequired = 3,
-                            Args = {"Instance", "Vector3", "Vector3", "RaycastParams"}
-                        }
-                    }
-
-                    local function ValidateArguments(Args, RayMethod)
-                        local Matches = 0
-                        if #Args < RayMethod.ArgCountRequired then
-                            return false
-                        end
-                        for Pos, Argument in next, Args do
-                            if typeof(Argument) == RayMethod.Args[Pos] then
-                                Matches = Matches + 1
-                            end
-                        end
-                        return Matches >= RayMethod.ArgCountRequired
-                    end
-
-                    local function getDirection(Origin, Position)
-                        return (Position - Origin).Unit * 1000
-                    end
-
-                    local function getMousePosition()
-                        return GetMouseLocation(UserInputService)
-                    end
-
-                    local function GetInmateStatus(Character)
-                        local humanoid = FindFirstChild(Character, "Humanoid")
-                        if not humanoid then return "Regular" end
-                        local displayName = humanoid.DisplayName
-                        if string.sub(displayName, 1, 4) == "\xF0\x9F\x94\x97" then
-                            return "Arrestable"
-                        elseif string.sub(displayName, 1, 4) == "\xF0\x9F\x92\xA2" then
-                            return "Aggressive"
-                        end
-                        return "Regular"
-                    end
-
-                    local function IsPlayerVisible(Player, BoneName)
-                        local PlayerCharacter = Player.Character
-                        local LocalPlayerCharacter = LocalPlayer.Character
-                        if not (PlayerCharacter and LocalPlayerCharacter) then return false end
-
-                        local TargetPart = FindFirstChild(PlayerCharacter, BoneName) or FindFirstChild(PlayerCharacter, "HumanoidRootPart")
-                        if not TargetPart then return false end
-
-                        return #GetPartsObscuringTarget(Camera, {TargetPart.Position}, {LocalPlayerCharacter, PlayerCharacter}) == 0
-                    end
-
-                    local SilentAimFrameCounter = 0
-                    local CachedClosestResult = nil
-                    local CachedClosestFrame = -1
-
-                    local function getClosestPlayer()
-                        if CachedClosestFrame == SilentAimFrameCounter then
-                            return CachedClosestResult
-                        end
-
-                        local Closest = nil
-                        local ClosestDist = nil
-                        local MousePos = getMousePosition()
-                        local RawBone = SilentAimState.Bone
-
-                        local checkArrestSafety = SilentAimState.ArrestSafety
-                        local checkMuzzleLOS = SilentAimState.MuzzleLOS
-                        local LocalCharacter = LocalPlayer.Character
-                        local holdingTaser = false
-                        local muzzleOrigin = nil
-
-                        if LocalCharacter then
-                            local tool = LocalCharacter:FindFirstChildOfClass("Tool")
-                            if tool then
-                                if checkArrestSafety then
-                                    holdingTaser = tool.Name == "Taser"
-                                end
-                                if checkMuzzleLOS then
-                                    local muzzle = tool:FindFirstChild("Muzzle") or tool:FindFirstChild("Handle")
-                                    if muzzle then muzzleOrigin = muzzle.Position end
-                                end
-                            end
-                        end
-
-                        local losParams
-                        if muzzleOrigin then
-                            losParams = RaycastParams.new()
-                            losParams.FilterType = Enum.RaycastFilterType.Exclude
-                        end
-
-                        local myTeam = LocalPlayer.Team and LocalPlayer.Team.Name or ""
-
-                        for _, Player in next, GetPlayers(Players) do
-                            if Player == LocalPlayer then continue end
-
-                            local isBlacklisted = SilentAimState.Blacklist[Player.Name] or AutoBlacklistSet[Player.Name]
-                            local TeamName = Player.Team and Player.Team.Name or ""
-
-                            if isBlacklisted then
-                                if TeamName == myTeam and TeamName ~= "Inmates" then continue end
-                            end
-
-                            local Character = Player.Character
-                            if not Character then continue end
-
-                            if isBlacklisted then
-                                if TeamName == "Inmates" and GetInmateStatus(Character) == "Regular" then continue end
-                            end
-
-                            if not isBlacklisted then
-                                if SilentAimState.Whitelist[Player.Name] then continue end
-                                if SilentAimState.FriendCheck and FriendsCache[Player.Name] then continue end
-                                if next(SilentAimState.Teams) and not SilentAimState.Teams[TeamName] then continue end
-
-                                if TeamName == "Inmates" then
-                                    local needStatus = next(SilentAimState.InmateTypes) or (checkArrestSafety and not holdingTaser)
-                                    if needStatus then
-                                        local Status = GetInmateStatus(Character)
-                                        if next(SilentAimState.InmateTypes) and not SilentAimState.InmateTypes[Status] then continue end
-                                        if checkArrestSafety and not holdingTaser and Status == "Arrestable" then continue end
-                                    end
-                                end
-                            end
-
-                            local Humanoid = FindFirstChild(Character, "Humanoid")
-                            if SilentAimState.DeathCheck and (not Humanoid or Humanoid.Health <= 0) then continue end
-                            if SilentAimState.ForceFieldCheck and FindFirstChild(Character, "ForceField") then continue end
-
-                            local HumanoidRootPart = FindFirstChild(Character, "HumanoidRootPart")
-                            if not HumanoidRootPart then continue end
-
-                            local resolvedBone = ResolveBone(RawBone, Character, LocalCharacter)
-                            local targetPart = FindFirstChild(Character, resolvedBone) or HumanoidRootPart
-
-                            if SilentAimState.WallCheck and not IsPlayerVisible(Player, resolvedBone) then continue end
-
-                            if muzzleOrigin then
-                                losParams.FilterDescendantsInstances = {LocalCharacter, Character}
-                                if workspace:Raycast(muzzleOrigin, targetPart.Position - muzzleOrigin, losParams) then continue end
-                            end
-
-                            local ScreenPos, OnScreen = WorldToViewportPoint(Camera, targetPart.Position)
-                            if not OnScreen then continue end
-
-                            local Distance = (MousePos - Vector2.new(ScreenPos.X, ScreenPos.Y)).Magnitude
-
-                            if Distance > (ClosestDist or SilentAimState.Radius) then
-                                local bestBonePart = nil
-                                local bestBoneDist = ClosestDist or SilentAimState.Radius
-                                for _, boneName in ipairs(R6_BONES) do
-                                    local bp = FindFirstChild(Character, boneName)
-                                    if not bp then continue end
-                                    local bsp, bos = WorldToViewportPoint(Camera, bp.Position)
-                                    if not bos then continue end
-                                    local bd = (MousePos - Vector2.new(bsp.X, bsp.Y)).Magnitude
-                                    if bd < bestBoneDist then
-                                        if muzzleOrigin then
-                                            losParams.FilterDescendantsInstances = {LocalCharacter, Character}
-                                            if workspace:Raycast(muzzleOrigin, bp.Position - muzzleOrigin, losParams) then continue end
-                                        end
-                                        bestBoneDist = bd
-                                        bestBonePart = bp
-                                    end
-                                end
-                                if bestBonePart then
-                                    Closest = bestBonePart
-                                    ClosestDist = bestBoneDist
-                                end
-                            else
-                                Closest = targetPart
-                                ClosestDist = Distance
-                            end
-                        end
-
-                        CachedClosestResult = Closest
-                        CachedClosestFrame = SilentAimFrameCounter
-                        return Closest
-                    end
+                    local previewTarget = nil
 
                     NewRender(function()
-                        Camera = workspace.CurrentCamera
-                        SilentAimFrameCounter = SilentAimFrameCounter + 1
-
-                        if SilentAimState.Enabled and SilentAimState.FoVCircle then
-                            FoVCircle.Position = getMousePosition()
-                            FoVCircle.Radius = SilentAimState.Radius
+                        PLCamera = workspace.CurrentCamera
+                        local showCircle = SilentAimState.Enabled and SilentAimState.FoVCircle and SilentAimState.Mode == "Mouse"
+                        if showCircle then
+                            FoVCircle.Position = PL.getMousePosition()
+                            FoVCircle.Radius = SilentAimState.Range
                             FoVCircle.Color = SilentAimState.FoVCircleColor
+                            FoVCircle.Filled = SilentAimState.FoVCircleFilled
+                            FoVCircle.Thickness = 1
+                            FoVCircle.Transparency = 1 - SilentAimState.FoVCircleTransparency
                             FoVCircle.Visible = true
                         else
                             FoVCircle.Visible = false
                         end
 
-                        local ClosestTarget = SilentAimState.Enabled and getClosestPlayer() or nil
+                        previewTarget = nil
+                        if SilentAimState.Enabled or RagebotForcedTarget then
+                            local head = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
+                            local previewOrigin = RagebotMuzzleOrigin or (head and head.Position) or Vector3.zero
+                            previewTarget = RagebotForcedTarget or saGetTarget(previewOrigin, 1000, true, false)
+                        end
 
-                        if SilentAimState.Enabled and SilentAimState.Tracer then
-                            if ClosestTarget then
-                                local ScreenPos, OnScreen = WorldToViewportPoint(Camera, ClosestTarget.Position)
-                                if OnScreen then
-                                    Tracer.From = getMousePosition()
-                                    Tracer.To = Vector2.new(ScreenPos.X, ScreenPos.Y)
-                                    Tracer.Color = SilentAimState.TracerColor
-                                    Tracer.Visible = true
-                                else
-                                    Tracer.Visible = false
-                                end
+                        if SilentAimState.Enabled and SilentAimState.Tracer and previewTarget then
+                            local screenPos, onScreen = PLCamera:WorldToViewportPoint(previewTarget.Position)
+                            if onScreen then
+                                Tracer.From = PL.getMousePosition()
+                                Tracer.To = Vector2.new(screenPos.X, screenPos.Y)
+                                Tracer.Color = SilentAimState.TracerColor
+                                Tracer.Visible = true
                             else
                                 Tracer.Visible = false
                             end
@@ -811,111 +1002,20 @@ do
                             Tracer.Visible = false
                         end
 
-                        if SilentAimState.Triggerbot and ClosestTarget then
+                        if SilentAimState.Triggerbot and previewTarget then
                             local character = LocalPlayer.Character
                             if character then
                                 local tool = character:FindFirstChildOfClass("Tool")
-                                if tool then
-                                    local handle = tool:FindFirstChild("Handle")
-                                    if handle and handle:FindFirstChild("ShootSound") then
-                                        mouse1click()
-                                    end
+                                if tool and tool:FindFirstChild("Handle") and tool.Handle:FindFirstChild("ShootSound") then
+                                    mouse1click()
                                 end
                             end
                         end
                     end)
 
-
-                    local CallerBlacklist = {}
-                    do
-                        local cam = game:GetService("Players").LocalPlayer:FindFirstChildOfClass("PlayerScripts")
-                        if cam then
-                            local pm = cam:FindFirstChild("PlayerModule")
-                            if pm then
-                                local cm = pm:FindFirstChild("CameraModule")
-                                if cm then
-                                    CallerBlacklist[cm] = true
-                                    for _, desc in pairs(cm:GetDescendants()) do
-                                        if desc:IsA("ModuleScript") then
-                                            CallerBlacklist[desc] = true
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-
-                    local oldNamecall
-                    oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
-                        local Method = getnamecallmethod()
-
-                        if Method ~= "FindPartOnRayWithIgnoreList" and Method ~= "FindPartOnRayWithWhitelist"
-                            and Method ~= "FindPartOnRay" and Method ~= "findPartOnRay" and Method ~= "Raycast" then
-                            return oldNamecall(...)
-                        end
-
-                        local Arguments = {...}
-                        local self = Arguments[1]
-
-                        if self ~= workspace then return oldNamecall(...) end
-                        if checkcaller() then return oldNamecall(...) end
-
-                        local callerOk, callerScript = pcall(getcallingscript)
-                        if callerOk and callerScript and CallerBlacklist[callerScript] then
-                            return oldNamecall(...)
-                        end
-
-                        if not (SilentAimState.Enabled or RagebotForcedTarget) then
-                            return oldNamecall(...)
-                        end
-
-                        local rbTarget = RagebotForcedTarget
-                        local rbOrigin = RagebotMuzzleOrigin
-
-                        if Method == "FindPartOnRayWithIgnoreList" then
-                            if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithIgnoreList) then
-                                local HitPart = rbTarget or getClosestPlayer()
-                                if HitPart then
-                                    local Origin = rbOrigin or Arguments[2].Origin
-                                    Arguments[2] = Ray.new(Origin, getDirection(Origin, HitPart.Position))
-                                    return oldNamecall(unpack(Arguments))
-                                end
-                            end
-                        elseif Method == "FindPartOnRayWithWhitelist" then
-                            if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithWhitelist) then
-                                local HitPart = rbTarget or getClosestPlayer()
-                                if HitPart then
-                                    local Origin = rbOrigin or Arguments[2].Origin
-                                    Arguments[2] = Ray.new(Origin, getDirection(Origin, HitPart.Position))
-                                    return oldNamecall(unpack(Arguments))
-                                end
-                            end
-                        elseif Method == "FindPartOnRay" or Method == "findPartOnRay" then
-                            if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRay) then
-                                local HitPart = rbTarget or getClosestPlayer()
-                                if HitPart then
-                                    local Origin = rbOrigin or Arguments[2].Origin
-                                    Arguments[2] = Ray.new(Origin, getDirection(Origin, HitPart.Position))
-                                    return oldNamecall(unpack(Arguments))
-                                end
-                            end
-                        elseif Method == "Raycast" then
-                            if ValidateArguments(Arguments, ExpectedArguments.Raycast) then
-                                local HitPart = rbTarget or getClosestPlayer()
-                                if HitPart then
-                                    local Origin = rbOrigin or Arguments[2]
-                                    Arguments[2] = Origin
-                                    Arguments[3] = getDirection(Origin, HitPart.Position)
-                                    return oldNamecall(unpack(Arguments))
-                                end
-                            end
-                        end
-
-                        return oldNamecall(...)
-                    end))
-
                     RegisterCleanup(function()
-                        hookmetamethod(game, "__namecall", oldNamecall)
+                        PL.removeBulletHandler("SilentAim")
+                        if saAutofireThread then task.cancel(saAutofireThread) end
                     end)
                 end
             end
@@ -1079,7 +1179,16 @@ do
                     end
                     local entryText = entry.Name
                     if KillfeedNotificationsEnabled then
-                        Library:Notification("Killfeed", entryText, 3)
+                        local killPos = string.find(entryText, " killed ", 1, true)
+                        if killPos then
+                            local victim = string.match(string.sub(entryText, killPos + 8), "@([%w_]+)%)")
+                            if victim == LocalPlayer.Name then
+                                local killer = string.match(string.sub(entryText, 1, killPos - 1), "@([%w_]+)%)")
+                                if killer and killer ~= LocalPlayer.Name then
+                                    Library:Notification("Kill Notifications", killer .. " killed you!", 5)
+                                end
+                            end
+                        end
                     end
                     if KillSoundState.Enabled and IsLocalKillfeedEntry(entryText) then
                         ConfirmedKillCount = ConfirmedKillCount + 1
@@ -1154,7 +1263,7 @@ do
                     Min = 0,
                     Max = 3,
                     Default = 1,
-                    Decimals = 1,
+                    Decimals = 0.1,
                     Callback = function(v) HitSoundState.Volume = v end
                 })
 
@@ -1190,7 +1299,7 @@ do
                     Min = 0,
                     Max = 3,
                     Default = 1,
-                    Decimals = 1,
+                    Decimals = 0.1,
                     Callback = function(v) KillSoundState.Volume = v end
                 })
 
@@ -1207,6 +1316,172 @@ do
                     PlayKillSound()
                 end)
             end
+        end
+    end
+
+    do
+        local UtilitySubPage = CombatPage:SubPage({Name = "Utility", Columns = 2})
+
+        do
+            local AutoDetonateSection = UtilitySubPage:Section({Name = "Auto Detonate", Side = 1})
+            local ADEnabled = false
+            local localC4 = nil
+            local detonateTicks = 0
+            local detonateRay = RaycastParams.new()
+            detonateRay.CollisionGroup = "ClientBullet"
+            detonateRay.FilterType = Enum.RaycastFilterType.Exclude
+
+            AutoDetonateSection:Toggle({
+                Name = "Enabled",
+                Flag = "AutoDetonateEnabled",
+                Default = false,
+                Callback = function(v) ADEnabled = v end
+            })
+
+            local function trackC4(obj)
+                if obj:GetAttribute("UserId") == LocalPlayer.UserId then localC4 = obj end
+            end
+            TrackConnection(CollectionService:GetInstanceAddedSignal("C4"):Connect(function(obj)
+                if ADEnabled then trackC4(obj) end
+            end))
+            for _, obj in CollectionService:GetTagged("C4") do trackC4(obj) end
+
+            task.spawn(function()
+                while true do
+                    if ADEnabled and localC4 and localC4.Parent then
+                        local backpack = LocalPlayer:FindFirstChildWhichIsA("Backpack")
+                        local tool = backpack and backpack:FindFirstChild("C4 Explosive")
+                        if tool then
+                            local ent = PLTargeting.getClosestPart({
+                                Mode = "Position",
+                                Origin = localC4.Position,
+                                Range = 25,
+                                Bone = "HumanoidRootPart",
+                                AttackCheck = true,
+                                Filters = {Teams = {Criminals = true, Inmates = true}},
+                            })
+                            if ent then
+                                local char = ent.Parent
+                                local player = PlayersService:GetPlayerFromCharacter(char)
+                                detonateRay.FilterDescendantsInstances = {char, LocalPlayer.Character, localC4}
+                                local ray = workspace:Raycast(localC4.Position, ent.Position - localC4.Position, detonateRay)
+                                if not ray then
+                                    detonateTicks += 1
+                                    if detonateTicks > 3 then
+                                        local equipped = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Tool")
+                                        if equipped then equipped.Parent = backpack end
+                                        tool.Parent = LocalPlayer.Character
+                                        pcall(function()
+                                            ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("C4"):WaitForChild("ActivateC4"):InvokeServer()
+                                        end)
+                                        tool.Parent = backpack
+                                        if equipped then equipped.Parent = LocalPlayer.Character end
+                                        detonateTicks = 0
+                                    end
+                                    task.wait(0.05)
+                                    continue
+                                end
+                            end
+                        end
+                    end
+                    detonateTicks = 0
+                    task.wait(0.05)
+                end
+            end)
+        end
+
+        do
+            local AutoHealSection = UtilitySubPage:Section({Name = "Auto Heal", Side = 2})
+            local AHEnabled = false
+            local healItems = {Breakfast = true, Lunch = true, Dinner = true}
+
+            AutoHealSection:Toggle({
+                Name = "Enabled",
+                Flag = "AutoHealEnabled",
+                Default = false,
+                Callback = function(v) AHEnabled = v end
+            })
+
+            task.spawn(function()
+                while true do
+                    if AHEnabled and LocalPlayer.Character then
+                        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                        local backpack = LocalPlayer:FindFirstChildWhichIsA("Backpack")
+                        if humanoid and humanoid.Health <= 85 and backpack then
+                            local healTool
+                            for _, t in backpack:GetChildren() do
+                                if healItems[t.Name] then healTool = t break end
+                            end
+                            if healTool and (os.clock() - (healTool:GetAttribute("Client_LastConsumedAt") or 0)) >= 3 then
+                                local equipped = LocalPlayer.Character:FindFirstChildWhichIsA("Tool")
+                                if equipped then equipped.Parent = backpack end
+                                healTool.Parent = LocalPlayer.Character
+                                healTool:SetAttribute("Quantity", (healTool:GetAttribute("Quantity") or 1) - 1)
+                                healTool:SetAttribute("Client_LastConsumedAt", os.clock())
+                                pcall(function() ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("EatFood"):FireServer() end)
+                                healTool.Parent = backpack
+                                if equipped then equipped.Parent = LocalPlayer.Character end
+                            end
+                        end
+                    end
+                    task.wait(0.05)
+                end
+            end)
+        end
+
+        do
+            local AutoReloadSection = UtilitySubPage:Section({Name = "Auto Reload", Side = 1})
+            local AREnabled, ARHotSwap = false, false
+            local weaponPriority = {["M4A1"] = 1, ["AK-47"] = 1, MP5 = 1, FAL = 1, ["Remington 870"] = 2, M9 = 3, Revolver = 4}
+
+            local function getSwapWeapon()
+                local backpack = LocalPlayer:FindFirstChildWhichIsA("Backpack")
+                if not backpack then return nil end
+                local items = {}
+                for _, tool in backpack:GetChildren() do
+                    if tool:GetAttribute("FireRate") and (tool:GetAttribute("Local_ReloadSession") or 0) <= 0
+                        and tool.Name ~= "Taser" and tool.Name ~= "Sniper" then
+                        table.insert(items, tool)
+                    end
+                end
+                table.sort(items, function(a, b)
+                    return (weaponPriority[a.Name] or 100) < (weaponPriority[b.Name] or 100)
+                end)
+                return items[1]
+            end
+
+            local function shootReloadHandler()
+                if not AREnabled or not PL.Shoot then return end
+                local tool = debug.getupvalue(PL.Shoot, 1)
+                if tool and (tool:GetAttribute("Local_CurrentAmmo") or 1) <= 0 then
+                    if PL.Reload then task.spawn(PL.Reload) end
+                    if ARHotSwap then
+                        local wep = getSwapWeapon()
+                        if wep then
+                            tool.Parent = LocalPlayer.Backpack
+                            wep.Parent = LocalPlayer.Character
+                        end
+                    end
+                end
+            end
+
+            AutoReloadSection:Toggle({
+                Name = "Enabled",
+                Flag = "AutoReloadEnabled",
+                Default = false,
+                Callback = function(v)
+                    AREnabled = v
+                    if v then PL.addShootHandler("AutoReload", shootReloadHandler)
+                    else PL.removeShootHandler("AutoReload") end
+                end
+            })
+            AutoReloadSection:Toggle({
+                Name = "Hot Swap",
+                Flag = "AutoReloadHotSwap",
+                Default = false,
+                Callback = function(v) ARHotSwap = v end
+            })
+            RegisterCleanup(function() PL.removeShootHandler("AutoReload") end)
         end
     end
 
@@ -2048,6 +2323,252 @@ do
                 pcall(ChamsFolder.Destroy, ChamsFolder)
             end)
         end
+
+        do
+            local C4ESPSection = ESPSubPage:Section({Name = "C4 ESP", Side = 2})
+            local c4Refs, c4Folder = {}, Instance.new("Folder")
+            c4Folder.Name = "catnipC4ESP"
+            c4Folder.Parent = game:GetService("CoreGui")
+            local c4Fill = Color3.fromRGB(255, 80, 0)
+            local c4Outline = Color3.new(1, 1, 1)
+            local c4FillT, c4OutlineT = 0.5, 0
+
+            local function addC4(obj)
+                if c4Refs[obj] then return end
+                local h = Instance.new("Highlight")
+                h.Adornee = obj
+                h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                h.FillColor, h.OutlineColor = c4Fill, c4Outline
+                h.FillTransparency, h.OutlineTransparency = c4FillT, c4OutlineT
+                h.Parent = c4Folder
+                c4Refs[obj] = h
+            end
+            local function remC4(obj)
+                if c4Refs[obj] then c4Refs[obj]:Destroy() c4Refs[obj] = nil end
+            end
+
+            local C4Enabled = false
+            C4ESPSection:Toggle({Name = "Enabled", Flag = "C4ESPEnabled", Default = false, Callback = function(v)
+                C4Enabled = v
+                if v then
+                    for _, obj in CollectionService:GetTagged("C4") do addC4(obj) end
+                else
+                    for obj in pairs(c4Refs) do remC4(obj) end
+                end
+            end})
+            C4ESPSection:Toggle({Name = "Fill Color", Flag = "C4ESPFill", Default = true}):Colorpicker({
+                Name = "Fill", Flag = "C4ESPFillColor", Default = c4Fill, Callback = function(v)
+                    c4Fill = v
+                    for _, h in pairs(c4Refs) do h.FillColor = v end
+                end
+            })
+            C4ESPSection:Slider({Name = "Fill Transparency", Flag = "C4ESPFillT", Min = 0, Max = 1, Default = 0.5, Decimals = 0.01,
+                Callback = function(v) c4FillT = v for _, h in pairs(c4Refs) do h.FillTransparency = v end end})
+            C4ESPSection:Slider({Name = "Outline Transparency", Flag = "C4ESPOutlineT", Min = 0, Max = 1, Default = 0, Decimals = 0.01,
+                Callback = function(v) c4OutlineT = v for _, h in pairs(c4Refs) do h.OutlineTransparency = v end end})
+
+            TrackConnection(CollectionService:GetInstanceAddedSignal("C4"):Connect(function(obj) if C4Enabled then addC4(obj) end end))
+            TrackConnection(CollectionService:GetInstanceRemovedSignal("C4"):Connect(remC4))
+            RegisterCleanup(function()
+                for obj in pairs(c4Refs) do remC4(obj) end
+                c4Folder:Destroy()
+            end)
+        end
+    end
+
+    do
+        local EffectsSubPage = VisualsPage:SubPage({Name = "Effects", Columns = 2})
+        local vmTool, vmHandle, vmOldTool
+        local vmMove = Vector3.zero
+
+        local vmGui = Instance.new("ScreenGui")
+        vmGui.Name = "catnipViewmodel"
+        vmGui.ResetOnSpawn = false
+        vmGui.IgnoreGuiInset = true
+        vmGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        vmGui.Enabled = false
+        vmGui.Parent = (gethui and gethui()) or game:GetService("CoreGui")
+
+        local viewport = Instance.new("ViewportFrame")
+        viewport.Name = "Viewmodel"
+        viewport.Size = UDim2.fromScale(1, 1)
+        viewport.BackgroundTransparency = 1
+        viewport.LightColor = Color3.new(1, 1, 1)
+        viewport.Ambient = Color3.new(0.5, 0.5, 0.5)
+        viewport.Parent = vmGui
+
+        local worldModel = Instance.new("WorldModel")
+        worldModel.Parent = viewport
+
+        local vmCam = Instance.new("Camera")
+        vmCam.FieldOfView = 70
+        vmCam.Parent = viewport
+        viewport.CurrentCamera = vmCam
+
+        do
+            local BTState = {Enabled = false, Fade = true, Drawing = false, Lifetime = 0.2, Material = "Neon", Color = Color3.fromRGB(255, 200, 50), Opacity = 0.5}
+            local btDrawings = {}
+            local btSection = EffectsSubPage:Section({Name = "Bullet Tracers", Side = 1})
+
+            btSection:Toggle({Name = "Enabled", Flag = "BulletTracersEnabled", Default = false, Callback = function(v)
+                BTState.Enabled = v
+                if v then
+                    PL.TracerHook:Add("BulletTracers", function(origin, dir)
+                        if not BTState.Enabled then return end
+                        local velocity = CFrame.lookAt(origin, dir).LookVector * 1000
+                        if BTState.Drawing then
+                            local obj = TrackDrawing(Drawing.new("Line"))
+                            obj.Thickness = 2
+                            obj.Color = BTState.Color
+                            btDrawings[obj] = {origin, origin + velocity, os.clock()}
+                            task.delay(BTState.Lifetime, function()
+                                btDrawings[obj] = nil
+                                pcall(obj.Remove, obj)
+                            end)
+                        else
+                            local obj = Instance.new("Part")
+                            obj.Size = Vector3.new(0.1, 0.1, velocity.Magnitude)
+                            obj.CFrame = CFrame.lookAt(origin + velocity / 2, origin + velocity)
+                            obj.CanCollide, obj.CanQuery, obj.Anchored = false, false, true
+                            obj.Material = Enum.Material[BTState.Material] or Enum.Material.Neon
+                            obj.Color = BTState.Color
+                            obj.Transparency = 1 - BTState.Opacity
+                            obj.Parent = workspace
+                            if BTState.Fade then
+                                TweenService:Create(obj, TweenInfo.new(BTState.Lifetime), {Transparency = 1}):Play()
+                            end
+                            task.delay(BTState.Lifetime, obj.Destroy, obj)
+                        end
+                        return true
+                    end, 1)
+                else
+                    PL.TracerHook:Remove("BulletTracers")
+                end
+            end})
+            btSection:Dropdown({Name = "Material", Flag = "BulletTracersMaterial", Default = "Neon", Multi = false,
+                Items = {"Plastic", "Neon", "Metal", "Glass", "SmoothPlastic"}, Callback = function(v) BTState.Material = v end})
+            btSection:Toggle({Name = "Fade", Flag = "BulletTracersFade", Default = true, Callback = function(v) BTState.Fade = v end})
+            btSection:Toggle({Name = "Drawing", Flag = "BulletTracersDrawing", Default = false, Callback = function(v) BTState.Drawing = v end})
+            btSection:Slider({Name = "Lifetime", Flag = "BulletTracersLifetime", Min = 0.05, Max = 0.5, Default = 0.2, Decimals = 0.01, Suffix = "s", Callback = function(v) BTState.Lifetime = v end})
+            btSection:Toggle({Name = "Tracer Color", Flag = "BulletTracersUseColor", Default = true}):Colorpicker({
+                Name = "Color", Flag = "BulletTracersColor", Default = BTState.Color, Callback = function(v) BTState.Color = v end
+            })
+
+            NewRender(function()
+                for obj, data in btDrawings do
+                    local from, vis = PLCamera:WorldToViewportPoint(data[1])
+                    local to, vis2 = PLCamera:WorldToViewportPoint(data[2])
+                    if vis and vis2 then
+                        obj.Visible = true
+                        obj.From = Vector2.new(from.X, from.Y)
+                        obj.To = Vector2.new(to.X, to.Y)
+                        if BTState.Fade then
+                            obj.Transparency = BTState.Opacity * (1 - math.clamp((os.clock() - data[3]) / BTState.Lifetime, 0, 1))
+                        end
+                    else
+                        obj.Visible = false
+                    end
+                end
+            end)
+        end
+
+        do
+            local VMEnabled, VMSway, VMForceField = false, true, false
+            local VMColor = Color3.fromRGB(0, 200, 255)
+            local vmSection = EffectsSubPage:Section({Name = "Viewmodel", Side = 2})
+
+            local function restoreVmTool()
+                vmGui.Enabled = false
+                if vmOldTool then
+                    for _, v in vmOldTool:GetDescendants() do
+                        if v:IsA("BasePart") or v:IsA("Texture") or v:IsA("Decal") then
+                            v.LocalTransparencyModifier = 0
+                        end
+                    end
+                    vmOldTool = nil
+                end
+                if vmTool then vmTool:Destroy() vmTool, vmHandle = nil, nil end
+            end
+
+            local function onVmTool(tool)
+                if not VMEnabled or not tool or not tool:IsA("Tool") then return end
+                restoreVmTool()
+                vmOldTool = tool
+                vmTool = tool:Clone()
+                vmHandle = vmTool:FindFirstChild("Handle")
+                if not vmHandle then restoreVmTool() return end
+                for _, v in vmTool:GetDescendants() do
+                    if v:IsA("Script") or v:IsA("LocalScript") then v:Destroy() end
+                end
+                for _, v in vmTool:GetDescendants() do
+                    if v:IsA("BasePart") then
+                        v.Anchored = true
+                        v.CanCollide = false
+                        v.CanQuery = false
+                        if VMForceField then v.Material = Enum.Material.ForceField v.Color = VMColor end
+                    end
+                end
+                vmTool.Parent = worldModel
+                for _, v in vmOldTool:GetDescendants() do
+                    if v:IsA("BasePart") or v:IsA("Texture") or v:IsA("Decal") then v.LocalTransparencyModifier = 1 end
+                end
+                vmGui.Enabled = true
+            end
+
+            vmSection:Toggle({Name = "Enabled", Flag = "ViewmodelEnabled", Default = false, Callback = function(v)
+                VMEnabled = v
+                if not v then restoreVmTool()
+                else
+                    local char = LocalPlayer.Character
+                    local t = char and char:FindFirstChildWhichIsA("Tool")
+                    if t then onVmTool(t) end
+                end
+            end})
+            vmSection:Toggle({Name = "Sway", Flag = "ViewmodelSway", Default = true, Callback = function(v) VMSway = v end})
+            vmSection:Toggle({Name = "ForceField", Flag = "ViewmodelForceField", Default = false, Callback = function(v) VMForceField = v end})
+            vmSection:Toggle({Name = "Tint", Flag = "ViewmodelUseColor", Default = true}):Colorpicker({
+                Name = "Color", Flag = "ViewmodelColor", Default = VMColor, Callback = function(v) VMColor = v end
+            })
+
+            TrackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
+                restoreVmTool()
+                TrackConnection(char.ChildAdded:Connect(function(c) if c:IsA("Tool") then onVmTool(c) end end))
+                TrackConnection(char.ChildRemoved:Connect(function(c) if c == vmOldTool then restoreVmTool() end end))
+                local t = char:FindFirstChildWhichIsA("Tool")
+                if t then onVmTool(t) end
+            end))
+
+            NewRender(function()
+                if not VMEnabled or not vmHandle or not vmTool then return end
+                PLCamera = workspace.CurrentCamera
+                vmCam.CFrame = PLCamera.CFrame
+                vmCam.FieldOfView = PLCamera.FieldOfView
+
+                local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if root then
+                    vmMove = root.AssemblyLinearVelocity * 0.005
+                else
+                    vmMove = Vector3.zero
+                end
+
+                local look = PLCamera.CFrame.LookVector
+                if aimTimer > os.clock() then
+                    look = (aimVec - PLCamera.CFrame.Position).Unit
+                end
+                if VMSway then
+                    look = (look + PLCamera.CFrame.RightVector * math.sin(os.clock() * 10) * 0.06).Unit
+                end
+
+                local recoil = math.max(shootTimer - os.clock(), 0)
+                local cf = (PLCamera.CFrame * CFrame.new(2, -1.5, -3 - recoil)) + vmMove
+                -- World-space CFrames inside ViewportFrame WorldModel: renders on HUD only, no world wall clip
+                vmHandle.CFrame = CFrame.lookAlong(cf.Position, look)
+            end)
+            RegisterCleanup(function()
+                restoreVmTool()
+                vmGui:Destroy()
+            end)
+        end
     end
 
     do
@@ -2780,7 +3301,7 @@ do
                 Name = "Enabled",
                 ToolTip = {
                     Name = "Killfeed Notifications",
-                    Description = "Shows a notification for every new killfeed entry"
+                    Description = "Shows notifications for killfeed entries (including when you are killed)"
                 },
                 Flag = "KillfeedNotificationsEnabled",
                 Default = false,
@@ -2926,97 +3447,101 @@ do
 
     do
         local RemoveJumpCooldown = MiscPage:Section({Name = "Remove Jump Cooldown", Side = 1}) do
-            local Enabled = RemoveJumpCooldown:Toggle({
+            local NJCEnabled = false
+            local jumpConnDisabled = nil
+            local function onCharacterAdded(character)
+                local humanoid = character:WaitForChild("Humanoid", 10)
+                if not humanoid or not NJCEnabled then return end
+                local conns = getconnections(humanoid:GetPropertyChangedSignal("Jump"))
+                if conns[1] then
+                    jumpConnDisabled = conns[1]
+                    jumpConnDisabled:Disable()
+                end
+            end
+            RemoveJumpCooldown:Toggle({
                 Name = "Enabled",
                 ToolTip = {
                     Name = "Remove Jump Cooldown",
-                    Description = "Disables the forced delay between consecutive jumps"
+                    Description = "Disables the humanoid jump cooldown connection"
                 },
                 Flag = "RemoveJumpCooldownEnabled",
-                Default = false
-            }) do
-                NewRender(function()
-                    local character = game.Players.LocalPlayer.Character
-                    if not character then return end
-                    local antiJump = character:FindFirstChild("AntiJump")
-                    if not antiJump then return end
-                    antiJump.Disabled = Enabled:Get()
-                end)
-            end
+                Default = false,
+                Callback = function(v)
+                    NJCEnabled = v
+                    if v then
+                        if LocalPlayer.Character then task.spawn(onCharacterAdded, LocalPlayer.Character) end
+                    elseif jumpConnDisabled then
+                        pcall(function() jumpConnDisabled:Enable() end)
+                        jumpConnDisabled = nil
+                    end
+                end
+            })
+            TrackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
+                if NJCEnabled then onCharacterAdded(char) end
+            end))
+            RegisterCleanup(function()
+                if jumpConnDisabled then pcall(function() jumpConnDisabled:Enable() end) end
+            end)
         end
     end
 
     do
         local AntiInvisible = MiscPage:Section({Name = "Anti Invisible", Side = 2}) do
-            local Enabled = AntiInvisible:Toggle({
+            local AIEnabled = false
+            local invisAnimId = "215384594"
+            local tracked = {}
+
+            local function hookAnimator(animator)
+                if tracked[animator] then return end
+                tracked[animator] = TrackConnection(animator.AnimationPlayed:Connect(function(anim)
+                    if not AIEnabled then return end
+                    if anim.Animation and anim.Animation.AnimationId:find(invisAnimId) then
+                        anim:AdjustWeight(0)
+                    end
+                end))
+                for _, track in animator:GetPlayingAnimationTracks() do
+                    if track.Animation and track.Animation.AnimationId:find(invisAnimId) then
+                        track:AdjustWeight(0)
+                    end
+                end
+            end
+
+            local function onCharacter(character)
+                local humanoid = character:WaitForChild("Humanoid", 8)
+                if humanoid then
+                    local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid:WaitForChild("Animator", 5)
+                    if animator then hookAnimator(animator) end
+                end
+            end
+
+            AntiInvisible:Toggle({
                 Name = "Enabled",
                 ToolTip = {
                     Name = "Anti Invisible",
-                    Description = "Detects the invisibility glitch and highlights offending players in red"
+                    Description = "Zeroes weight on the invisibility animation (Vape AdjustWeight)"
                 },
                 Flag = "AntiInvisibleEnabled",
-                Default = false
-            }) do
-                local FlaggedPlayers = {}
-
-                local function ApplyHighlight(character)
-                    if character:FindFirstChild("AntiInvisHighlight") then return end
-                    local highlight = Instance.new("Highlight")
-                    highlight.Name = "AntiInvisHighlight"
-                    highlight.FillColor = Color3.fromRGB(255, 0, 0)
-                    highlight.FillTransparency = 0.5
-                    highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
-                    highlight.OutlineTransparency = 0
-                    highlight.Parent = character
-                end
-
-                local function RemoveHighlight(character)
-                    local highlight = character:FindFirstChild("AntiInvisHighlight")
-                    if highlight then highlight:Destroy() end
-                end
-
-                local function CleanupPlayer(player)
-                    FlaggedPlayers[player] = nil
-                    if player.Character then
-                        RemoveHighlight(player.Character)
-                    end
-                end
-
-                NewRender(function()
-                    if Enabled:Get() == true then
-                        for _, player in pairs(game:GetService("Players"):GetPlayers()) do
-                            if player == game.Players.LocalPlayer then continue end
-                            local character = player.Character
-                            if not character then continue end
-                            local humanoid = character:FindFirstChildOfClass("Humanoid")
-                            if not humanoid then continue end
-
-                            local animator = humanoid:FindFirstChildOfClass("Animator")
-                            if animator then
-                                for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-                                    if track.Animation and track.Animation.AnimationId == "rbxassetid://215384594" then
-                                        track:Stop(0)
-                                        FlaggedPlayers[player] = true
-                                    end
-                                end
-                            end
-
-                            if FlaggedPlayers[player] then
-                                ApplyHighlight(character)
-                            end
-                        end
-                    else
-                        for player, _ in pairs(FlaggedPlayers) do
-                            CleanupPlayer(player)
+                Default = false,
+                Callback = function(v)
+                    AIEnabled = v
+                    if v then
+                        for _, player in PlayersService:GetPlayers() do
+                            if player ~= LocalPlayer and player.Character then onCharacter(player.Character) end
                         end
                     end
-                end)
-
-                RegisterCleanup(function()
-                    for player, _ in pairs(FlaggedPlayers) do
-                        CleanupPlayer(player)
-                    end
-                end)
+                end
+            })
+            TrackConnection(PlayersService.PlayerAdded:Connect(function(player)
+                TrackConnection(player.CharacterAdded:Connect(function(char)
+                    if AIEnabled then onCharacter(char) end
+                end))
+            end))
+            for _, player in PlayersService:GetPlayers() do
+                if player ~= LocalPlayer then
+                    TrackConnection(player.CharacterAdded:Connect(function(char)
+                        if AIEnabled then onCharacter(char) end
+                    end))
+                end
             end
         end
     end
@@ -3044,155 +3569,55 @@ do
 
     do
         local AntiTase = MiscPage:Section({Name = "Anti Tase", Side = 2}) do
-            local ATState = {
-                Enabled = false,
-                Method = "Old Method",
-            }
+            local ATEnabled = false
+            local taseOldFn, taseConn = nil, nil
+            local PlayerTased = ReplicatedStorage:WaitForChild("GunRemotes"):WaitForChild("PlayerTased")
+
+            local function hookTaseHandler()
+                if taseOldFn then return end
+                taseConn = getconnections(PlayerTased.OnClientEvent)[1]
+                if not (taseConn and taseConn.Function) then return end
+                taseOldFn = hookfunction(taseConn.Function, function()
+                    local char = LocalPlayer.Character
+                    LocalPlayer:SetAttribute("BackpackEnabled", false)
+                    if char then
+                        local humanoid = char:FindFirstChildOfClass("Humanoid")
+                        if humanoid then humanoid:UnequipTools() end
+                    end
+                    task.wait(3.5)
+                    if LocalPlayer.Character == char then
+                        LocalPlayer:SetAttribute("BackpackEnabled", true)
+                    end
+                end)
+            end
+
+            local function unhookTaseHandler()
+                if taseOldFn and taseConn and taseConn.Function then
+                    hookfunction(taseConn.Function, taseOldFn)
+                    taseOldFn = nil
+                end
+            end
 
             AntiTase:Toggle({
                 Name = "Enabled",
                 ToolTip = {
                     Name = "Anti Tase",
-                    Description = "Prevents or cancels the taser stun effect and re-equips your weapon"
+                    Description = "Hooks PlayerTased: brief backpack lock then restore (Vape)"
                 },
                 Flag = "AntiTaseEnabled",
                 Default = false,
-                Callback = function(v) ATState.Enabled = v end
+                Callback = function(v)
+                    ATEnabled = v
+                    if v then hookTaseHandler() else unhookTaseHandler() end
+                end
             })
-
-            AntiTase:Dropdown({
-                Name = "Method",
-                ToolTip = {
-                    Name = "Method",
-                    Description = "New Method continuously blocks the tase event. Old Method cancels the animation after it starts but has a 5s weapon cooldown."
-                },
-                Flag = "AntiTaseMethod",
-                Default = "Old Method",
-                Multi = false,
-                Items = {"New Method", "Old Method"},
-                Callback = function(v) ATState.Method = v end
-            }) do
-                local PlayerTased = game:GetService("ReplicatedStorage"):WaitForChild("GunRemotes"):WaitForChild("PlayerTased")
-
-                local PreTaseSpeed = 16
-                local PreTaseJumpHeight = 5.5
-                local LastEquippedTool = nil
-                local WasTazedLastFrame = false
-                local TaseCooldownEnd = 0
-                local CooldownNotifShown = false
-                local CapturedSpeedOnTase = 16
-
-                local NewMethodActive = false
-
-                local function DisableTaseConnections()
-                    for _, conn in pairs(getconnections(PlayerTased.OnClientEvent)) do
-                        conn:Disable()
-                    end
+            TrackConnection(LocalPlayer.CharacterAdded:Connect(function()
+                if ATEnabled then
+                    unhookTaseHandler()
+                    task.defer(hookTaseHandler)
                 end
-
-                local function EnableTaseConnections()
-                    for _, conn in pairs(getconnections(PlayerTased.OnClientEvent)) do
-                        conn:Enable()
-                    end
-                end
-
-                NewRender(function()
-                    local character = game.Players.LocalPlayer.Character
-                    if not character then return end
-                    local humanoid = character:FindFirstChildOfClass("Humanoid")
-                    if not humanoid then return end
-
-                    local currentTool = character:FindFirstChildOfClass("Tool")
-                    if currentTool then
-                        LastEquippedTool = currentTool
-                    end
-
-                    if not ATState.Enabled then
-                        if NewMethodActive then
-                            EnableTaseConnections()
-                            NewMethodActive = false
-                        end
-                        WasTazedLastFrame = false
-                        return
-                    end
-
-                    if ATState.Method == "New Method" then
-                        DisableTaseConnections()
-                        NewMethodActive = true
-                        WasTazedLastFrame = false
-                        return
-                    end
-
-                    if NewMethodActive then
-                        EnableTaseConnections()
-                        NewMethodActive = false
-                    end
-
-                    if humanoid.WalkSpeed > 0 and tick() > TaseCooldownEnd then
-                        PreTaseSpeed = humanoid.WalkSpeed
-                    end
-                    if humanoid.JumpHeight > 0 then
-                        PreTaseJumpHeight = humanoid.JumpHeight
-                    end
-
-                    local animator = humanoid:FindFirstChildOfClass("Animator")
-                    if not animator then return end
-
-                    local tazed = false
-                    for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-                        local animId = track.Animation and track.Animation.AnimationId or ""
-                        if animId == "rbxassetid://279227693" or animId == "rbxassetid://279229192" then
-                            track:Stop(0)
-                            tazed = true
-                        end
-                    end
-
-                    if tazed then
-                        humanoid.WalkSpeed = PreTaseSpeed
-                        humanoid.JumpHeight = PreTaseJumpHeight
-
-                        if not WasTazedLastFrame then
-                            CapturedSpeedOnTase = PreTaseSpeed
-                            TaseCooldownEnd = tick() + 5
-                            CooldownNotifShown = false
-
-                            if LastEquippedTool then
-                                local tool = LastEquippedTool
-                                if tool.Parent == game.Players.LocalPlayer.Backpack then
-                                    humanoid:EquipTool(tool)
-                                end
-                            end
-                        end
-                        WasTazedLastFrame = true
-                    else
-                        WasTazedLastFrame = false
-                    end
-
-                    local now = tick()
-                    if TaseCooldownEnd > 0 and now < TaseCooldownEnd then
-                        if not CooldownNotifShown then
-                            CooldownNotifShown = true
-                            Library:Notification("Anti Tase", "Weapon cooldown active (5s)", 5)
-                        end
-
-                        if humanoid.WalkSpeed == 16 and CapturedSpeedOnTase ~= 16 then
-                            humanoid.WalkSpeed = CapturedSpeedOnTase
-                        end
-                    end
-
-                    if TaseCooldownEnd > 0 and now >= TaseCooldownEnd then
-                        if humanoid.WalkSpeed == 16 and CapturedSpeedOnTase ~= 16 then
-                            humanoid.WalkSpeed = CapturedSpeedOnTase
-                        end
-                        TaseCooldownEnd = 0
-                    end
-                end)
-
-                RegisterCleanup(function()
-                    EnableTaseConnections()
-                    NewMethodActive = false
-                end)
-            end
+            end))
+            RegisterCleanup(unhookTaseHandler)
         end
     end
 
@@ -3204,19 +3629,32 @@ do
                 Radius = 10,
                 Cooldown = 0.5,
             }
-
             local PALastTick = 0
-            local GiverRemote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("GiverPressed")
+            local pickupItems = {}
+            local GiverRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("GiverPressed")
+
+            local function addPickup(obj)
+                if obj:IsA("Model") and obj.Name ~= "TouchGiver" and obj.Name ~= "Model" and obj:GetAttribute("ToolName") then
+                    table.insert(pickupItems, obj)
+                end
+            end
 
             PickupAura:Toggle({
                 Name = "Enabled",
                 ToolTip = {
                     Name = "Pickup Aura",
-                    Description = "Automatically picks up selected items within range using the GiverPressed remote"
+                    Description = "Auto-pickup ToolName models in range (GiverPressed); select items, radius, and cooldown"
                 },
                 Flag = "PickupAuraEnabled",
                 Default = false,
-                Callback = function(v) PAState.Enabled = v end
+                Callback = function(v)
+                    PAState.Enabled = v
+                    if v then
+                        for _, obj in workspace:GetChildren() do task.spawn(addPickup, obj) end
+                    else
+                        table.clear(pickupItems)
+                    end
+                end
             })
 
             PickupAura:Dropdown({
@@ -3242,30 +3680,50 @@ do
                 Callback = function(v) PAState.Radius = v end
             })
 
-            NewRender(function()
-                if not PAState.Enabled then return end
-                if not next(PAState.Items) then return end
+            PickupAura:Slider({
+                Name = "Cooldown",
+                Flag = "PickupAuraCooldown",
+                Min = 0.1,
+                Max = 1,
+                Default = 0.5,
+                Suffix = "s",
+                Decimals = 0.1,
+                Callback = function(v) PAState.Cooldown = v end
+            })
 
-                local now = tick()
-                if (now - PALastTick) < PAState.Cooldown then return end
+            TrackConnection(workspace.ChildAdded:Connect(function(obj)
+                if PAState.Enabled then addPickup(obj) end
+            end))
+            TrackConnection(workspace.ChildRemoved:Connect(function(obj)
+                local idx = table.find(pickupItems, obj)
+                if idx then table.remove(pickupItems, idx) end
+            end))
 
-                local character = game.Players.LocalPlayer.Character
-                if not character then return end
-                local hrp = character:FindFirstChild("HumanoidRootPart")
-                if not hrp then return end
-
-                local myPos = hrp.Position
-                local radius = PAState.Radius
-
-                for _, obj in pairs(workspace:GetChildren()) do
-                    if not PAState.Items[obj.Name] then continue end
-                    local part = ResolvePickupPart(obj)
-
-                    if part and (myPos - part.Position).Magnitude <= radius then
-                        PALastTick = now
-                        pcall(GiverRemote.FireServer, GiverRemote, obj)
-                        return
+            task.spawn(function()
+                while true do
+                    if PAState.Enabled and next(PAState.Items) and LocalPlayer.Character then
+                        local now = tick()
+                        if (now - PALastTick) >= PAState.Cooldown then
+                            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            local backpack = LocalPlayer:FindFirstChildWhichIsA("Backpack")
+                            if root and backpack then
+                                local pos = root.Position
+                                for _, model in pickupItems do
+                                    local toolName = model:GetAttribute("ToolName")
+                                    if toolName and PAState.Items[toolName] and model.PrimaryPart then
+                                        if (model.PrimaryPart.Position - pos).Magnitude <= PAState.Radius then
+                                            if not backpack:FindFirstChild(toolName) then
+                                                PALastTick = now
+                                                pcall(GiverRemote.FireServer, GiverRemote, model)
+                                                break
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
                     end
+                    task.wait(0.1)
                 end
             end)
         end
@@ -3280,11 +3738,15 @@ do
             local AAState = {
                 Enabled = false,
                 FriendCheck = false,
+                HandCheck = false,
+                CooldownBar = false,
                 ShowRadius = false,
                 ShowTarget = false,
-                Radius = 10,
+                Radius = 8,
                 Whitelist = {},
             }
+            local arrestCooldown = 0
+            local cdHolder, cdFrame, cdLabel
 
             local function GetInmateStatusAA(character)
                 local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -3351,12 +3813,61 @@ do
             ArrestAura:Slider({
                 Name = "Radius",
                 Flag = "ArrestAuraRadius",
-                Min = 5,
-                Max = 30,
-                Default = 10,
+                Min = 1,
+                Max = 8,
+                Default = 8,
                 Suffix = " studs",
                 Decimals = 1,
                 Callback = function(v) AAState.Radius = v end
+            })
+
+            ArrestAura:Toggle({
+                Name = "Hand Check",
+                ToolTip = {Name = "Hand Check", Description = "Only arrest when Handcuffs equipped"},
+                Flag = "ArrestAuraHandCheck",
+                Default = false,
+                Callback = function(v) AAState.HandCheck = v end
+            })
+
+            ArrestAura:Toggle({
+                Name = "Cooldown Bar",
+                Flag = "ArrestAuraCooldownBar",
+                Default = false,
+                Callback = function(v)
+                    AAState.CooldownBar = v
+                    if v and not cdHolder then
+                        cdHolder = Instance.new("Frame")
+                        cdHolder.BorderSizePixel = 0
+                        cdHolder.BackgroundTransparency = 0.7
+                        cdHolder.AnchorPoint = Vector2.new(0.5, 0)
+                        cdHolder.BackgroundColor3 = Color3.new(1, 1, 1)
+                        cdHolder.Size = UDim2.new(0.1, 0, 0, 5)
+                        cdHolder.Position = UDim2.fromScale(0.5, 0.55)
+                        cdHolder.Parent = game:GetService("CoreGui")
+                        cdFrame = Instance.new("Frame")
+                        cdFrame.BorderSizePixel = 0
+                        cdFrame.BackgroundTransparency = 0.3
+                        cdFrame.BackgroundColor3 = Color3.new(1, 1, 1)
+                        cdFrame.Size = UDim2.new(1, -2, 1, -2)
+                        cdFrame.Position = UDim2.fromOffset(1, 1)
+                        cdFrame.Parent = cdHolder
+                        cdLabel = Instance.new("TextLabel")
+                        cdLabel.Size = UDim2.new(1, 0, 0, 14)
+                        cdLabel.Position = UDim2.fromOffset(0, 10)
+                        cdLabel.BackgroundTransparency = 1
+                        cdLabel.TextColor3 = Color3.new(1, 1, 1)
+                        cdLabel.TextScaled = true
+                        cdLabel.TextStrokeTransparency = 0
+                        cdLabel.Font = Enum.Font.Arial
+                        cdLabel.Parent = cdHolder
+                        RegisterCleanup(function()
+                            if cdHolder then cdHolder:Destroy() cdHolder = nil end
+                        end)
+                    elseif not v and cdHolder then
+                        cdHolder:Destroy()
+                        cdHolder, cdFrame, cdLabel = nil, nil, nil
+                    end
+                end
             })
 
             ArrestAura:Toggle({
@@ -3489,12 +4000,43 @@ do
                     end
                 end
 
+                if cdHolder and AAState.CooldownBar then
+                    cdHolder.Visible = arrestCooldown > os.clock()
+                    if cdHolder.Visible and cdFrame and cdLabel then
+                        local diff = arrestCooldown - os.clock()
+                        cdFrame.Size = UDim2.new(math.clamp(diff / 7, 0, 1), -2, 1, -2)
+                        cdLabel.Text = string.format("%.1fs", diff)
+                    end
+                end
+
+                local canArrest = arrestCooldown < os.clock()
+                if AAState.HandCheck then
+                    local tool = character:FindFirstChildWhichIsA("Tool")
+                    canArrest = canArrest and tool and tool.Name == "Handcuffs"
+                end
+
+                if closestPlayer and canArrest then
+                    local targetRoot = closestPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    local tChar = closestPlayer.Character
+                    if targetRoot and tChar and not tChar:GetAttribute("Arrested") then
+                        if closestPlayer.Team == Teams.Inmates and tChar:GetAttribute("Hostile") and not tChar:GetAttribute("Tased") then
+                            closestPlayer = nil
+                        end
+                    end
+                else
+                    closestPlayer = nil
+                end
+
                 if closestPlayer then
                     local targetRoot = closestPlayer.Character:FindFirstChild("HumanoidRootPart")
                     if targetRoot then
-                        pcall(function()
-                            ArrestRemote:InvokeServer(closestPlayer, 1)
+                        local success, didArrest = pcall(function()
+                            return ArrestRemote:InvokeServer(closestPlayer, 1)
                         end)
+                        if success and didArrest then
+                            arrestCooldown = os.clock() + 7
+                            Library:Notification("Auto Arrest", "Arrested " .. closestPlayer.Name, 3)
+                        end
 
                         if AAState.ShowTarget then
                             local targetFeetY = targetRoot.Position.Y - 3
@@ -3531,7 +4073,7 @@ do
                 FriendCheck = false,
                 ShowRadius = false,
                 ShowTarget = false,
-                Radius = 10,
+                Radius = 12,
                 Teams = {},
                 InmateTypes = {},
                 Whitelist = {},
@@ -3600,9 +4142,9 @@ do
             FistAura:Slider({
                 Name = "Radius",
                 Flag = "FistAuraRadius",
-                Min = 5,
-                Max = 30,
-                Default = 10,
+                Min = 1,
+                Max = 12,
+                Default = 12,
                 Suffix = " studs",
                 Decimals = 1,
                 Callback = function(v) FAState.Radius = v end
@@ -3743,27 +4285,23 @@ do
                     for _, line in FARadiusLines do line.Visible = false end
                 end
 
-                local closestPlayer = nil
-                local closestDist = FAState.Radius
-
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player == LocalPlayer then continue end
-                    if FAState.Whitelist[player.Name] then continue end
-                    if FAState.FriendCheck and FriendsCache[player.Name] then continue end
-                    if not ShouldTarget(player) then continue end
-                    local targetChar = player.Character
-                    if not targetChar then continue end
-                    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-                    if not targetRoot then continue end
-                    local dist = (rootPart.Position - targetRoot.Position).Magnitude
-                    if dist <= closestDist then
-                        closestDist = dist
-                        closestPlayer = player
-                    end
-                end
+                local entities = PLTargeting.allPositions({
+                    Origin = rootPart.Position,
+                    Range = FAState.Radius,
+                    Bone = "HumanoidRootPart",
+                    AttackCheck = true,
+                    Wallcheck = false,
+                    Filters = {
+                        Teams = FAState.Teams,
+                        InmateTypes = FAState.InmateTypes,
+                        FriendCheck = FAState.FriendCheck,
+                        Whitelist = FAState.Whitelist,
+                    },
+                })
+                local closestPlayer = entities[1] and entities[1].Player or nil
 
                 if closestPlayer then
-                    local targetRoot = closestPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    local targetRoot = closestPlayer.Character and closestPlayer.Character:FindFirstChild("HumanoidRootPart")
                     if targetRoot then
                         pcall(function()
                             MeleeRemote:FireServer(closestPlayer, 1, 1)
@@ -3799,23 +4337,266 @@ do
                 Name = "Enabled",
                 ToolTip = {
                     Name = "Anti Riot Shield",
-                    Description = "Removes RiotShieldPart from all players' characters"
+                    Description = "Sets RiotShieldPart CanQuery false so bullets pass through"
                 },
                 Flag = "AntiRiotShieldEnabled",
                 Default = false
             }) do
+                local shieldModified = {}
                 NewRender(function()
-                    if Enabled:Get() ~= true then return end
-                    for _, player in pairs(game:GetService("Players"):GetPlayers()) do
+                    if Enabled:Get() ~= true then
+                        for shield, orig in pairs(shieldModified) do
+                            if shield.Parent then shield.CanQuery = orig end
+                        end
+                        table.clear(shieldModified)
+                        return
+                    end
+                    for _, player in pairs(PlayersService:GetPlayers()) do
                         local character = player.Character
                         if not character then continue end
                         local shield = character:FindFirstChild("RiotShieldPart")
-                        if shield then
-                            shield:Destroy()
+                        if shield and shield:IsA("BasePart") then
+                            if not shieldModified[shield] then shieldModified[shield] = shield.CanQuery end
+                            shield.CanQuery = false
                         end
                     end
                 end)
+                RegisterCleanup(function()
+                    for shield, orig in pairs(shieldModified) do
+                        if shield.Parent then shield.CanQuery = orig end
+                    end
+                end)
             end
+        end
+    end
+
+    do
+        local AntiKillPlaneSection = BlatantPage:Section({Name = "Anti Kill Plane", Side = 1})
+        local killPlaneParts = {}
+        AntiKillPlaneSection:Toggle({
+            Name = "Enabled",
+            Flag = "AntiKillPlaneEnabled",
+            Default = false,
+            Callback = function(v)
+                if v then
+                    for x = -2048, 2048, 2048 do
+                        for z = -2048, 2048, 2048 do
+                            local part = Instance.new("Part")
+                            part.CanQuery = false
+                            part.CanCollide = true
+                            part.Anchored = true
+                            part.Transparency = 1
+                            part.Size = Vector3.new(2048, 10, 2048)
+                            part.Position = Vector3.new(x, 170, z)
+                            part.Parent = workspace
+                            table.insert(killPlaneParts, part)
+                        end
+                    end
+                else
+                    for _, part in killPlaneParts do pcall(part.Destroy, part) end
+                    table.clear(killPlaneParts)
+                end
+            end
+        })
+        RegisterCleanup(function()
+            for _, part in killPlaneParts do pcall(part.Destroy, part) end
+            table.clear(killPlaneParts)
+        end)
+    end
+
+    do
+        local AutoResetSection = BlatantPage:Section({Name = "Auto Reset", Side = 2})
+        local criminalsTeam = Teams:FindFirstChild("Criminals")
+        local autoResetConn
+        AutoResetSection:Toggle({
+            Name = "Enabled",
+            Flag = "AutoResetEnabled",
+            Default = false,
+            Callback = function(v)
+                if autoResetConn then autoResetConn:Disconnect() autoResetConn = nil end
+                if v then
+                    autoResetConn = LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+                        if criminalsTeam and LocalPlayer.Team == criminalsTeam and LocalPlayer.Character then
+                            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                            if hum then hum:ChangeState(Enum.HumanoidStateType.Dead) end
+                        end
+                    end)
+                    TrackConnection(autoResetConn)
+                end
+            end
+        })
+    end
+
+    do
+        local VFState = {Enabled = false, Mode = "CFrame", Speed = 60}
+        local vfUp, vfDown = 0, 0
+        local vfWheels = {}
+        local vfPart
+        local VehicleFlySection = BlatantPage:Section({Name = "Vehicle Fly", Side = 1})
+        local carContainer = workspace:WaitForChild("CarContainer", 30)
+
+        VehicleFlySection:Toggle({
+            Name = "Enabled",
+            Flag = "VehicleFlyEnabled",
+            Default = false,
+            Callback = function(v)
+                VFState.Enabled = v
+                vfUp, vfDown = 0, 0
+            end
+        })
+        VehicleFlySection:Dropdown({
+            Name = "Mode", Flag = "VehicleFlyMode", Default = "CFrame", Multi = false,
+            Items = {"CFrame", "Part"}, Callback = function(v) VFState.Mode = v end
+        })
+        VehicleFlySection:Slider({
+            Name = "Speed", Flag = "VehicleFlySpeed", Min = 1, Max = 100, Default = 60,
+            Callback = function(v) VFState.Speed = v end
+        })
+
+        TrackConnection(UserInputService.InputBegan:Connect(function(input)
+            if not VFState.Enabled or UserInputService:GetFocusedTextBox() then return end
+            if input.KeyCode == Enum.KeyCode.E then vfUp = 1
+            elseif input.KeyCode == Enum.KeyCode.Q then vfDown = -1 end
+        end))
+        TrackConnection(UserInputService.InputEnded:Connect(function(input)
+            if input.KeyCode == Enum.KeyCode.E and vfUp == 1 then vfUp = 0
+            elseif input.KeyCode == Enum.KeyCode.Q and vfDown == -1 then vfDown = 0 end
+        end))
+
+        NewRender(function(dt)
+            if not VFState.Enabled or not LocalPlayer.Character then
+                for _, w in vfWheels do pcall(function() w.Enabled = true end) end
+                table.clear(vfWheels)
+                if vfPart then vfPart.Parent = nil end
+                return
+            end
+            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            local seat = hum and hum.SeatPart
+            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not (seat and root and carContainer and seat:IsDescendantOf(carContainer)) then
+                if vfPart then vfPart.Parent = nil end
+                return
+            end
+            if VFState.Mode == "Part" then
+                if not vfPart then
+                    vfPart = Instance.new("Part")
+                    vfPart.Size = Vector3.new(50, 1, 50)
+                    vfPart.Anchored, vfPart.CanQuery, vfPart.Transparency = true, false, 1
+                end
+                vfPart.CFrame = CFrame.new(seat.Position - Vector3.new(0, 2.2 - (vfUp + vfDown), 0))
+                vfPart.Parent = workspace
+            elseif seat:IsA("VehicleSeat") then
+                local wheels = seat.Parent and seat.Parent.Parent and seat.Parent.Parent:FindFirstChild("Wheels")
+                if wheels and #vfWheels == 0 then
+                    for _, w in wheels:GetDescendants() do
+                        if w.ClassName == "Rotate" or w:IsA("HingeConstraint") then
+                            w.Enabled = false
+                            table.insert(vfWheels, w)
+                        end
+                    end
+                end
+                root.AssemblyLinearVelocity = Vector3.new(0, 2.25, 0)
+                root.CFrame = CFrame.lookAlong(root.Position, PLCamera.CFrame.LookVector)
+                    + (hum.MoveDirection + Vector3.new(0, vfUp + vfDown, 0)) * VFState.Speed * dt
+            end
+        end)
+        RegisterCleanup(function()
+            for _, w in vfWheels do pcall(function() w.Enabled = true end) end
+            if vfPart then vfPart:Destroy() end
+        end)
+    end
+
+    do
+        local VSState = {Enabled = false, Speed = 140}
+        local vsSeats, vsOldSeat = {}, nil
+        local VehicleSpeedSection = BlatantPage:Section({Name = "Vehicle Speed", Side = 2})
+        VehicleSpeedSection:Toggle({
+            Name = "Enabled", Flag = "VehicleSpeedEnabled", Default = false,
+            Callback = function(v) VSState.Enabled = v if not v then table.clear(vsSeats) vsOldSeat = nil end end
+        })
+        VehicleSpeedSection:Slider({
+            Name = "Speed", Flag = "VehicleSpeedValue", Min = 80, Max = 200, Default = 140,
+            Callback = function(v) VSState.Speed = v end
+        })
+        local carContainerVS = workspace:FindFirstChild("CarContainer")
+        task.spawn(function()
+            while true do
+                if VSState.Enabled and carContainerVS and LocalPlayer.Character then
+                    local seat = LocalPlayer.Character:FindFirstChildOfClass("Humanoid") and LocalPlayer.Character.Humanoid.SeatPart
+                    if seat and seat:IsDescendantOf(carContainerVS) then
+                        if seat ~= vsOldSeat then
+                            vsSeats = {}
+                            local model = seat.Parent and seat.Parent.Parent
+                            if model then
+                                for _, v in model:GetDescendants() do
+                                    if v:IsA("VehicleSeat") then table.insert(vsSeats, v) end
+                                end
+                            end
+                            vsOldSeat = seat
+                        end
+                        for _, v in vsSeats do v.MaxSpeed = VSState.Speed v.Torque = 4 end
+                    end
+                end
+                task.wait()
+            end
+        end)
+    end
+
+    do
+        local VehicleWallbangSection = BlatantPage:Section({Name = "Vehicle Wallbang", Side = 2})
+        local vehicleWallbangModified = {}
+
+        local function ModifyVehiclePart(part)
+            if part:IsA("BasePart") then
+                if not vehicleWallbangModified[part] then
+                    vehicleWallbangModified[part] = part.CanQuery
+                end
+                part.CanQuery = false
+            end
+        end
+
+        local carContainer = workspace:FindFirstChild("CarContainer")
+        if carContainer then
+            local VehicleWallbangEnabled
+
+            local function SetVehicleWallbang(enabled)
+                if enabled then
+                    task.defer(function()
+                        if VehicleWallbangEnabled:Get() ~= true then return end
+                        for _, part in carContainer:GetDescendants() do
+                            ModifyVehiclePart(part)
+                        end
+                    end)
+                else
+                    for part, original in pairs(vehicleWallbangModified) do
+                        if part.Parent then
+                            part.CanQuery = original
+                        end
+                    end
+                    table.clear(vehicleWallbangModified)
+                end
+            end
+
+            VehicleWallbangEnabled = VehicleWallbangSection:Toggle({
+                Name = "Enabled",
+                ToolTip = {
+                    Name = "Vehicle Wallbang",
+                    Description = "Disables CanQuery on vehicle parts so bullets can pass through cars"
+                },
+                Flag = "VehicleWallbangEnabled",
+                Default = false,
+                Callback = SetVehicleWallbang,
+            })
+
+            TrackConnection(carContainer.DescendantAdded:Connect(function(part)
+                if VehicleWallbangEnabled:Get() == true then
+                    ModifyVehiclePart(part)
+                end
+            end))
+
+            RegisterCleanup(function()
+                SetVehicleWallbang(false)
+            end)
         end
     end
 

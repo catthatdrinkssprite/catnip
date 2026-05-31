@@ -46,7 +46,7 @@ for _, folder in Folders do
     end
 end
 
-local Library = loadstring(game:HttpGet(BASE_URL .. "/libraries/scoot/Library.lua", true))()
+local Library = loadstring(game:HttpGet(BASE_URL .. "/library/Library.lua", true))()
 
 local logoPath = "catnip/images/paw.png"
 local logoImage = isfile(logoPath) and getcustomasset(logoPath) or ""

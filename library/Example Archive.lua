@@ -1,4 +1,4 @@
-local Library = loadstring(game:HttpGet("https://github.com/catthatdrinkssprite/catnip/raw/main/libraries/scoot/Library.lua"))()
+local Library = loadstring(game:HttpGet("https://github.com/catthatdrinkssprite/catnip/raw/main/library/Library.lua"))()
 
 local Window = Library:Window({
     Logo = "rbxassetid://77218680285262",
