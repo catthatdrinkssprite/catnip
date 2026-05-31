@@ -11,6 +11,22 @@
     <meta name="theme-color" content="#82a68f">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
+        #custom-cursor {
+            width: 20px;
+            height: 20px;
+            background: rgba(130, 174, 143, 0.2);
+            border: 2px solid rgb(130, 174, 143);
+            border-radius: 50%;
+            position: fixed;
+            top: 0;
+            left: 0;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 9999;
+            box-shadow: 0 0 15px rgba(130, 174, 143, 0.6), inset 0 0 8px rgba(130, 174, 143, 0.4);
+            will-change: left, top; 
+        }
+
         :root {
             --primary: rgb(130, 174, 143);
             --primary-glow: rgba(130, 174, 143, 0.3);
@@ -26,6 +42,7 @@
             margin: 0;
             padding: 0;
             font-family: 'JetBrains Mono', monospace;
+            cursor: none !important;
         }
 
         body {
@@ -35,7 +52,6 @@
             min-height: 100vh;
         }
 
-        /* dynamic particles background */
         #bg-canvas {
             position: fixed;
             top: 0;
@@ -53,7 +69,6 @@
             position: relative;
         }
 
-        /* header section */
         header {
             text-align: center;
             margin-bottom: 60px;
@@ -74,7 +89,6 @@
             margin-bottom: 25px;
         }
 
-        /* links & loadstring buttons */
         .links-container {
             display: flex;
             justify-content: center;
@@ -129,7 +143,6 @@
             margin-right: 15px;
         }
 
-        /* section layouts */
         .section-title {
             color: var(--primary);
             font-size: 1.8rem;
@@ -146,7 +159,6 @@
             margin-bottom: 50px;
         }
 
-        /* tables */
         table {
             width: 100%;
             border-collapse: collapse;
@@ -185,7 +197,6 @@
             text-shadow: 0 0 10px var(--primary-glow);
         }
 
-        /* features section toggle behavior */
         .features-display-container {
             display: none;
             animation: fadeIn 0.4s ease-out forwards;
@@ -196,7 +207,6 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* interactive moving cards */
         .card {
             background: var(--card-bg);
             border: 1px solid var(--border-color);
@@ -222,7 +232,6 @@
             gap: 8px;
         }
 
-        /* feature listing styling */
         .feature-list {
             list-style: none;
         }
@@ -250,7 +259,6 @@
             font-size: 0.85rem;
         }
 
-        /* footer design */
         footer {
             text-align: center;
             margin-top: 80px;
@@ -270,6 +278,8 @@
     </style>
 </head>
 <body>
+
+    <div id="custom-cursor"></div>
 
     <canvas id="bg-canvas"></canvas>
 
@@ -503,7 +513,32 @@
     </div>
 
     <script>
-        // function to toggle the layout visibility upon clicking game name
+        const cursor = document.getElementById("custom-cursor");
+
+        let realX = 0;
+        let realY = 0;
+
+        let currentX = 0;
+        let currentY = 0;
+
+        window.addEventListener("mousemove", (e) => {
+            realX = e.clientX;
+            realY = e.clientY;
+        });
+
+        function updateCursorLocation() {
+            currentX += (realX - currentX) * 0.15;
+            currentY += (realY - currentY) * 0.15;
+
+            cursor.style.left = `${currentX}px`;
+            cursor.style.top = `${currentY}px`;
+
+            requestAnimationFrame(updateCursorLocation);
+        }
+
+        updateCursorLocation();
+
+
         function toggleFeatures(id) {
             const container = document.getElementById(id);
             if (container.style.display === "block") {
@@ -514,7 +549,6 @@
             }
         }
 
-        // interactive moving hover cards calculation
         const cards = document.querySelectorAll('.tilt-card');
         cards.forEach(card => {
             card.addEventListener('mousemove', (e) => {
@@ -525,7 +559,6 @@
                 const centerX = rect.width / 2;
                 const centerY = rect.height / 2;
                 
-                // maximum movement calculation angles
                 const rotateX = ((centerY - y) / centerY) * 10; 
                 const rotateY = ((x - centerX) / centerX) * 10;
                 
@@ -537,7 +570,6 @@
             });
         });
 
-        // interactive dynamic dot background connecting to mouse
         const canvas = document.getElementById('bg-canvas');
         const ctx = canvas.getContext('2d');
 
@@ -574,7 +606,6 @@
                 if (this.x < 0 || this.x > width) this.vx *= -1;
                 if (this.y < 0 || this.y > height) this.vy *= -1;
 
-                // pull particles or react to mouse proximity
                 if (mouse.x != null && mouse.y != null) {
                     let dx = mouse.x - this.x;
                     let dy = mouse.y - this.y;
@@ -604,7 +635,6 @@
                 p.draw();
             });
 
-            // connect closest dots to mouse coordinates
             if (mouse.x !== null && mouse.y !== null) {
                 particles.forEach(p => {
                     let dx = mouse.x - p.x;
@@ -627,7 +657,6 @@
         }
         animate();
 
-        // function loader script click-to-copy handler
         function copyScript() {
             const scriptText = document.getElementById('script-text').innerText;
             navigator.clipboard.writeText(scriptText).then(() => {
