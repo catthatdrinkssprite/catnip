@@ -2547,35 +2547,7 @@ do
     end
 
     do
-        local vmTool, vmHandle, vmOldTool
-        local vmMove = Vector3.zero
-
-        local vmGui = Instance.new("ScreenGui")
-        vmGui.Name = "catnipViewmodel"
-        vmGui.ResetOnSpawn = false
-        vmGui.IgnoreGuiInset = true
-        vmGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-        vmGui.Enabled = false
-        vmGui.Parent = (gethui and gethui()) or game:GetService("CoreGui")
-
-        local viewport = Instance.new("ViewportFrame")
-        viewport.Name = "Viewmodel"
-        viewport.Size = UDim2.fromScale(1, 1)
-        viewport.BackgroundTransparency = 1
-        viewport.LightColor = Color3.new(1, 1, 1)
-        viewport.Ambient = Color3.new(0.5, 0.5, 0.5)
-        viewport.Parent = vmGui
-
-        local worldModel = Instance.new("WorldModel")
-        worldModel.Parent = viewport
-
-        local vmCam = Instance.new("Camera")
-        vmCam.FieldOfView = 70
-        vmCam.Parent = viewport
-        viewport.CurrentCamera = vmCam
-
-        do
-            local BTState = {Enabled = false, Fade = true, Drawing = false, Lifetime = 0.2, Thickness = 2, Material = "Neon", Color = Color3.fromRGB(255, 200, 50), Opacity = 0.5}
+        local BTState = {Enabled = false, Fade = true, Drawing = false, Lifetime = 0.2, Thickness = 2, Material = "Neon", Color = Color3.fromRGB(255, 200, 50), Opacity = 0.5}
             local btDrawings = {}
             local btMaterials = {}
             for _, mat in Enum.Material:GetEnumItems() do
@@ -2650,147 +2622,143 @@ do
                     end
                 end
             end)
+    end
+
+    do
+        local vmTool, vmHandle, vmOldTool
+        local vmAimLook = Vector3.new(0, 0, -1)
+        local VMEnabled, VMSway, VMForceField = false, true, false
+        local VMColor = Color3.fromRGB(0, 200, 255)
+        local vmSection = VisualsPage:Section({Name = "Viewmodel", Side = 2})
+
+        local function styleVmParts()
+            if not vmTool then return end
+            for _, v in vmTool:GetDescendants() do
+                if v:IsA("BasePart") then
+                    if VMForceField then
+                        v.Material = Enum.Material.ForceField
+                        v.Color = VMColor
+                    end
+                end
+            end
         end
 
-        do
-            local VMEnabled, VMSway, VMForceField = false, true, false
-            local VMMode = "Viewport"
-            local VMColor = Color3.fromRGB(0, 200, 255)
-            local vmSection = VisualsPage:Section({Name = "Viewmodel", Side = 2})
-
-            local function getVmParent()
-                if VMMode == "Viewport" then
-                    return worldModel
-                end
-                return workspace.CurrentCamera
-            end
-
-            local function updateVmGui()
-                vmGui.Enabled = VMEnabled and VMMode == "Viewport" and vmTool ~= nil
-            end
-
-            local function styleVmTool(useViewport)
-                for _, v in vmTool:GetDescendants() do
-                    if v:IsA("BasePart") then
-                        v.CanCollide = false
-                        v.CanQuery = false
-                        v.Anchored = useViewport
-                        if VMForceField then
-                            v.Material = Enum.Material.ForceField
-                            v.Color = VMColor
-                        end
-                    end
-                end
-            end
-
-            local function restoreVmTool()
-                vmGui.Enabled = false
-                if vmOldTool then
-                    for _, v in vmOldTool:GetDescendants() do
-                        if v:IsA("BasePart") or v:IsA("Texture") or v:IsA("Decal") then
-                            v.LocalTransparencyModifier = 0
-                        end
-                    end
-                    vmOldTool = nil
-                end
-                if vmTool then vmTool:Destroy() vmTool, vmHandle = nil, nil end
-            end
-
-            local function onVmTool(tool)
-                if not VMEnabled or not tool or not tool:IsA("Tool") then return end
-                restoreVmTool()
-                vmOldTool = tool
-                vmTool = tool:Clone()
-                vmHandle = vmTool:FindFirstChild("Handle")
-                if not vmHandle then restoreVmTool() return end
-                for _, v in vmTool:GetDescendants() do
-                    if v:IsA("Script") or v:IsA("LocalScript") then v:Destroy() end
-                end
-                styleVmTool(VMMode == "Viewport")
-                vmTool.Parent = getVmParent()
+        local function restoreVmTool()
+            if vmOldTool then
                 for _, v in vmOldTool:GetDescendants() do
-                    if v:IsA("BasePart") or v:IsA("Texture") or v:IsA("Decal") then v.LocalTransparencyModifier = 1 end
-                end
-                updateVmGui()
-            end
-
-            vmSection:Dropdown({
-                Name = "Mode",
-                Flag = "ViewmodelMode",
-                Default = "Viewport",
-                Multi = false,
-                Items = {"Viewport", "Regular"},
-                Callback = function(v)
-                    VMMode = v
-                    if not VMEnabled then return end
-                    local t = vmOldTool
-                    if vmTool then
-                        styleVmTool(v == "Viewport")
-                        vmTool.Parent = getVmParent()
-                        updateVmGui()
+                    if v:IsA("BasePart") or v:IsA("Texture") or v:IsA("Decal") then
+                        v.LocalTransparencyModifier = 0
                     end
-                    if t and t.Parent and not vmTool then onVmTool(t) end
                 end
-            })
-            vmSection:Toggle({Name = "Enabled", Flag = "ViewmodelEnabled", Default = false, Callback = function(v)
+                vmOldTool = nil
+            end
+            if vmTool then
+                vmTool:Destroy()
+                vmTool, vmHandle = nil, nil
+            end
+        end
+
+        local function onVmTool(tool)
+            if not VMEnabled or not tool or not tool:IsA("Tool") then return end
+            restoreVmTool()
+            vmOldTool = tool
+            vmTool = tool:Clone()
+            vmHandle = vmTool:FindFirstChild("Handle")
+            if not vmHandle then
+                restoreVmTool()
+                return
+            end
+            for _, v in vmTool:GetDescendants() do
+                if v:IsA("Script") or v:IsA("LocalScript") then
+                    v:Destroy()
+                end
+            end
+            styleVmParts()
+            vmTool.Parent = workspace.CurrentCamera
+            for _, v in vmOldTool:GetDescendants() do
+                if v:IsA("BasePart") or v:IsA("Texture") or v:IsA("Decal") then
+                    v.LocalTransparencyModifier = 1
+                end
+            end
+            vmAimLook = workspace.CurrentCamera.CFrame.LookVector
+        end
+
+        local function refreshVmTool()
+            if not VMEnabled or not vmOldTool or not vmOldTool.Parent then return end
+            onVmTool(vmOldTool)
+        end
+
+        vmSection:Toggle({
+            Name = "Enabled",
+            Flag = "ViewmodelEnabled",
+            Default = false,
+            Callback = function(v)
                 VMEnabled = v
-                if not v then restoreVmTool()
+                if not v then
+                    restoreVmTool()
                 else
                     local char = LocalPlayer.Character
                     local t = char and char:FindFirstChildWhichIsA("Tool")
                     if t then onVmTool(t) end
                 end
-            end})
-            vmSection:Toggle({Name = "Sway", Flag = "ViewmodelSway", Default = true, Callback = function(v) VMSway = v end})
-            vmSection:Toggle({Name = "ForceField", Flag = "ViewmodelForceField", Default = false, Callback = function(v) VMForceField = v end})
-            vmSection:Toggle({Name = "Tint", Flag = "ViewmodelUseColor", Default = true}):Colorpicker({
-                Name = "Color", Flag = "ViewmodelColor", Default = VMColor, Callback = function(v) VMColor = v end
-            })
+            end
+        })
+        vmSection:Toggle({Name = "Sway", Flag = "ViewmodelSway", Default = true, Callback = function(v) VMSway = v end})
+        vmSection:Toggle({
+            Name = "ForceField",
+            Flag = "ViewmodelForceField",
+            Default = false,
+            Callback = function(v)
+                VMForceField = v
+                refreshVmTool()
+            end
+        })
+        vmSection:Toggle({Name = "Tint", Flag = "ViewmodelUseColor", Default = true}):Colorpicker({
+            Name = "Color",
+            Flag = "ViewmodelColor",
+            Default = VMColor,
+            Callback = function(v)
+                VMColor = v
+                styleVmParts()
+            end
+        })
 
-            TrackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
-                restoreVmTool()
-                TrackConnection(char.ChildAdded:Connect(function(c) if c:IsA("Tool") then onVmTool(c) end end))
-                TrackConnection(char.ChildRemoved:Connect(function(c) if c == vmOldTool then restoreVmTool() end end))
-                local t = char:FindFirstChildWhichIsA("Tool")
-                if t then onVmTool(t) end
+        TrackConnection(LocalPlayer.CharacterAdded:Connect(function(char)
+            restoreVmTool()
+            TrackConnection(char.ChildAdded:Connect(function(c)
+                if c:IsA("Tool") then onVmTool(c) end
             end))
+            TrackConnection(char.ChildRemoved:Connect(function(c)
+                if c == vmOldTool then restoreVmTool() end
+            end))
+            local t = char:FindFirstChildWhichIsA("Tool")
+            if t then onVmTool(t) end
+        end))
 
-            NewRender(function(dt)
-                if not VMEnabled or not vmHandle or not vmTool then return end
-                local cam = workspace.CurrentCamera
-                PLCamera = cam
+        NewRender(function(dt)
+            if not VMEnabled or not vmHandle then return end
+            local cam = workspace.CurrentCamera
+            PLCamera = cam
 
-                local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                vmMove = root and root.AssemblyLinearVelocity * 0.005 or Vector3.zero
-                if vmMove.Magnitude > 0.1 and VMSway then
-                    vmMove = vmMove + (cam.CFrame * CFrame.new(math.sin(os.clock() * 10) * 0.06, 0, 0)).Position - cam.CFrame.Position
-                end
+            local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local vmMove = root and root.AssemblyLinearVelocity * 0.005 or Vector3.zero
+            if vmMove.Magnitude > 0.1 and VMSway then
+                vmMove = vmMove + (cam.CFrame * CFrame.new(math.sin(os.clock() * 10) * 0.06, 0, 0)).Position - cam.CFrame.Position
+            end
 
-                local recoil = math.max(shootTimer - os.clock(), 0)
-                local lookVec = cam.CFrame.LookVector
+            local cf = (cam.CFrame * CFrame.new(2, -1.5, -3)) + vmMove
+            local targetLook = cam.CFrame.LookVector
+            if aimTimer > os.clock() then
+                targetLook = CFrame.lookAt(cf.Position, aimVec).LookVector
+            end
+            vmAimLook = vmAimLook:Lerp(targetLook, math.min(1, 15 * dt)).Unit
 
-                if VMMode == "Viewport" then
-                    vmCam.FieldOfView = cam.FieldOfView
-                    vmCam.CFrame = cam.CFrame.Rotation
-                    local cf = (cam.CFrame.Rotation * CFrame.new(2, -1.5, -3)) + vmMove
-                    if aimTimer > os.clock() then
-                        lookVec = (aimVec - cf.Position).Unit
-                    end
-                    vmHandle.CFrame = CFrame.lookAlong(cf.Position, lookVec) * CFrame.new(0, 0, recoil)
-                else
-                    local cf = (cam.CFrame * CFrame.new(2, -1.5, -3)) + vmMove
-                    if aimTimer > os.clock() then
-                        lookVec = (aimVec - cf.Position).Unit
-                    end
-                    vmHandle.CFrame = CFrame.lookAlong(cf.Position, lookVec) * CFrame.new(0, 0, recoil)
-                end
-                vmHandle.AssemblyLinearVelocity = Vector3.zero
-            end)
-            RegisterCleanup(function()
-                restoreVmTool()
-                vmGui:Destroy()
-            end)
-        end
+            local recoil = math.max(shootTimer - os.clock(), 0)
+            vmHandle.CFrame = CFrame.lookAlong(cf.Position, vmAimLook) * CFrame.new(0, 0, recoil)
+            vmHandle.AssemblyLinearVelocity = Vector3.zero
+        end)
+
+        RegisterCleanup(restoreVmTool)
     end
 
     do
