@@ -934,21 +934,13 @@ do
                         SABlacklistDropdown:Remove(p.Name)
                     end))
                 end do
-                    local FoVCircleOutline = TrackDrawing(Drawing.new("Circle"))
-                    FoVCircleOutline.Thickness = 2
-                    FoVCircleOutline.NumSides = 64
-                    FoVCircleOutline.Filled = false
-                    FoVCircleOutline.Visible = false
-                    FoVCircleOutline.ZIndex = 1000
-                    FoVCircleOutline.Transparency = 0
-
-                    local FoVCircleFill = TrackDrawing(Drawing.new("Circle"))
-                    FoVCircleFill.Thickness = 1
-                    FoVCircleFill.NumSides = 64
-                    FoVCircleFill.Filled = true
-                    FoVCircleFill.Visible = false
-                    FoVCircleFill.ZIndex = 999
-                    FoVCircleFill.Transparency = 0.5
+                    local FoVCircle = TrackDrawing(Drawing.new("Circle"))
+                    FoVCircle.Thickness = 1
+                    FoVCircle.NumSides = 100
+                    FoVCircle.Filled = false
+                    FoVCircle.Visible = false
+                    FoVCircle.ZIndex = 999
+                    FoVCircle.Transparency = 1
 
                     local Tracer = TrackDrawing(Drawing.new("Line"))
                     Tracer.Thickness = 1
@@ -962,26 +954,15 @@ do
                         PLCamera = workspace.CurrentCamera
                         local showCircle = SilentAimState.Enabled and SilentAimState.FoVCircle and SilentAimState.Mode == "Mouse"
                         if showCircle then
-                            local pos = PL.getMousePosition()
-                            local radius = SilentAimState.Range
-                            local color = SilentAimState.FoVCircleColor
-                            FoVCircleOutline.Position = pos
-                            FoVCircleOutline.Radius = radius
-                            FoVCircleOutline.Color = color
-                            FoVCircleOutline.Transparency = 0
-                            FoVCircleOutline.Visible = true
-                            if SilentAimState.FoVCircleFilled then
-                                FoVCircleFill.Position = pos
-                                FoVCircleFill.Radius = math.max(radius - 2, 1)
-                                FoVCircleFill.Color = color
-                                FoVCircleFill.Transparency = 1 - SilentAimState.FoVCircleTransparency
-                                FoVCircleFill.Visible = true
-                            else
-                                FoVCircleFill.Visible = false
-                            end
+                            FoVCircle.Position = PL.getMousePosition()
+                            FoVCircle.Radius = SilentAimState.Range
+                            FoVCircle.Color = SilentAimState.FoVCircleColor
+                            FoVCircle.Filled = SilentAimState.FoVCircleFilled
+                            FoVCircle.Thickness = 1
+                            FoVCircle.Transparency = 1 - SilentAimState.FoVCircleTransparency
+                            FoVCircle.Visible = true
                         else
-                            FoVCircleOutline.Visible = false
-                            FoVCircleFill.Visible = false
+                            FoVCircle.Visible = false
                         end
 
                         previewTarget = nil
